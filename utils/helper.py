@@ -4,7 +4,6 @@ import datetime
 import hashlib
 from typing import Optional
 from fastapi import HTTPException, status, Request
-from jose import jwt, JWTError
 from database.postgres import PostgresSQL
 
 SECRET_KEY = os.getenv("SECRET_KEY", "Thebrownfoxjumpsoverthereiver")  # Use a more secure key in production!
@@ -62,5 +61,5 @@ def verify_token(request: Request):
 
         return {"user_id": user_id, "role": role}  # Return user info
 
-    except JWTError:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token")
+    except Exception as e:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=f"Invalid token - {e}")
