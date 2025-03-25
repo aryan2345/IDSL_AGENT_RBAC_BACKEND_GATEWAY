@@ -1,0 +1,44 @@
+version: "3.8"
+
+services:
+  fastapi:
+    container_name: fastapi_app
+    build: .
+    ports:
+      - "8000:8000"  # Expose FastAPI on port 8000
+    environment:
+      - DATABASE_URL=postgresql://postgres:postgres@db:5432/mydb  # FastAPI app's connection to DB
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      - app-network
+    volumes:
+      - .:/app  # Mount the local code into the container
+
+  db:
+    container_name: postgres_db
+    image: postgres:13
+    environment:
+      - POSTGRES_USER=postgres  # Database user
+      - POSTGRES_PASSWORD=postgres  # Database password
+      - POSTGRES_DB=mydb  # Database name
+    ports:
+      - "5432:5432"  # Expose PostgreSQL on port 5432
+    volumes:
+      - postgres-data:/var/lib/postgresql/data  # Persistent volume
+    networks:
+      - app-network
+    healthcheck:
+      test: [ "CMD", "pg_isready", "-U", "postgres", "-d", "mydb" ]
+      interval: 10s
+      retries: 5
+      start_period: 10s
+      timeout: 5s
+
+networks:
+  app-network:
+    driver: bridge
+
+volumes:
+  postgres-data:  # This is the volume for PostgreSQL data persistence
