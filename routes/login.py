@@ -5,7 +5,7 @@ from schema.models import UserLogin
 from database.postgres import PostgresSQL
 from utils.helper import hash_password, create_access_token
 
-login_router = APIRouter(prefix="/login", tags=["login"])
+login_router = APIRouter(tags=["login"])
 db = PostgresSQL()
 
 @login_router.post("/login")
@@ -25,4 +25,9 @@ async def login(user: UserLogin):
         (session_id, user_data['user_id'], access_token, expire)
     )
 
-    return {"access_token": access_token, "token_type": "bearer"}
+    return {
+        "access_token": access_token,
+        "token_type": "bearer",
+        "user_id": user_data['user_id'],
+        "role": user_data['role']
+    }
