@@ -6,9 +6,9 @@ from schema.models import User, Group, AddGroupRequest, AddUserRequest
 
 data_router = APIRouter()
 
-@data_router.get("/data/get_users", response_model=List[User])
+@data_router.get("/data/get_users")
 async def get_users(request: Request, current_user: dict = Depends(verify_token)):
-    if current_user["role"] != "admin":
+    if current_user["role"] != "system_admin":
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Insufficient permissions")
 
     # Fetch all users from the database
@@ -21,10 +21,10 @@ async def get_users(request: Request, current_user: dict = Depends(verify_token)
 
     return users
 
-@data_router.get("/data/get_groups", response_model=List[Group])
+@data_router.get("/data/get_groups")
 async def get_all_groups(request: Request, current_user: dict = Depends(verify_token)):
     # Check if the current user has an 'admin' role
-    if current_user["role"] != "admin":
+    if current_user["role"] != "system_admin":
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Insufficient permissions")
 
     # Fetch all groups with their admin and users using JOIN
@@ -46,7 +46,7 @@ async def get_all_groups(request: Request, current_user: dict = Depends(verify_t
 @data_router.post("/data/add_group", status_code=status.HTTP_201_CREATED)
 async def add_group(request: AddGroupRequest, current_user: dict = Depends(verify_token)):
     # Check if the current user has an 'admin' role
-    if current_user["role"] != "admin":
+    if current_user["role"] != "system_admin":
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Insufficient permissions")
 
     # Generate a unique group_id using UUID
@@ -66,7 +66,7 @@ async def add_group(request: AddGroupRequest, current_user: dict = Depends(verif
 @data_router.post("/data/add_user", status_code=status.HTTP_201_CREATED)
 async def add_user(request: AddUserRequest, current_user: dict = Depends(verify_token)):
     # Check if the current user has an 'admin' role
-    if current_user["role"] != "admin":
+    if current_user["role"] != "system_admin":
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Insufficient permissions")
 
     user_id = str(uuid.uuid4())
