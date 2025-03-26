@@ -170,3 +170,21 @@ async def delete_group(request: DeleteGroupRequest, current_user: dict = Depends
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Error deleting group")
 
     return {"message": "Group deleted successfully", "group_id": request.group_id}
+
+@data_router.post("/data/fetch_user_information")
+async def fetch_user_information(current_user: dict = Depends(verify_token)):
+    try:
+        # Fetch user information from the PostgreSQL 'users' table
+        user_info = db.fetch_one(
+            "SELECT user_id, group_id FROM users WHERE user_id = %s",
+            (current_user["user_id"],)
+        )
+
+        if not user_info:
+            raise HTTPException(status_code=404, detail="User not found")
+
+        # Return user information (user_id and group_id)
+        return {"user_id": user_info["user_id"], "group_id": user_info["group_id"]}
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error fetching user information: {str(e)}")
