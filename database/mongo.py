@@ -24,7 +24,7 @@ class MongoDB:
         try:
             # Prepare the new chat document with empty chat_content
             new_chat = {
-                "_id": ObjectId(chat_id),  # Use the provided chat_id as the _id
+                "chat_id": chat_id,  # Use the provided chat_id as the _id
                 "chat_content": []  # Initialize with an empty list
             }
 
@@ -49,7 +49,7 @@ class MongoDB:
         """
         try:
             result = self.collection.update_one(
-                {"_id": ObjectId(chat_id)},  # Find the document by chat_id
+                {"chat_id": chat_id},  # Find the document by chat_id
                 {"$push": {"chat_content": new_message}},  # Append the new message to the chat_content array
             )
 
@@ -73,7 +73,7 @@ class MongoDB:
             Dict: The chat document containing chat_id and chat_content.
         """
         try:
-            chat = self.collection.find_one({"_id": ObjectId(chat_id)})
+            chat = self.collection.find_one({"chat_id": chat_id})
             if chat:
                 return {"chat_id": str(chat["_id"]), "chat_content": chat["chat_content"]}
 
@@ -93,7 +93,7 @@ class MongoDB:
         try:
             chats = self.collection.find()
             return [
-                {"chat_id": str(chat["_id"]), "chat_content": chat["chat_content"]}
+                {"chat_id": str(chat["chat_id"]), "chat_content": chat["chat_content"]}
                 for chat in chats
             ]
 

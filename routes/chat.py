@@ -1,4 +1,5 @@
 import uuid
+import logging
 from fastapi import APIRouter, Depends, HTTPException
 
 from database.mongo import MongoDB
@@ -7,6 +8,7 @@ from utils.helper import verify_token, db
 
 chat_router = APIRouter()
 mongo = MongoDB()
+logger = logging.getLogger(__file__)
 
 @chat_router.get("/chat/get_conversations")
 async def get_conversations(current_user: dict = Depends(verify_token)):
@@ -32,11 +34,14 @@ async def create_conversation(request: ChatRequest, current_user: dict = Depends
         )
 
     except Exception as e:
+        logger.error(e)
         raise HTTPException(status_code=500, detail=f"Error inserting chat into PostgreSQL: {str(e)}")
 
     try:
         mongo.create_new_chat(chat_id)  # This creates the MongoDB entry with an empty chat_content list
+
     except HTTPException as e:
+        logger.error(e)
         raise HTTPException(status_code=500, detail=f"Error creating chat in MongoDB: {str(e)}")
 
         # Return the chat_id and confirmation message
@@ -50,5 +55,6 @@ async def get_conversation_history(request: ChatRequest ,current_user: dict = De
         return {"chat_id": request.chat_id, "chat_content": chat["chat_content"]}
 
     except HTTPException as e:
+        logger.error(e)
         # If an error occurs (e.g., chat not found), raise HTTPException with appropriate status
         raise HTTPException(status_code=e.status_code, detail=e.detail)

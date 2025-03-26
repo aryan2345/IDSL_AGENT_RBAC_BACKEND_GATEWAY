@@ -23,7 +23,10 @@ def startup():
     db = client.get_database(name='mydb')
 
     collection_name = "chats"
-    db.create_collection(collection_name)
+
+    if collection_name not in db.list_collection_names():
+        db.create_collection(collection_name, check_exists=True)
+
     logging.info(f"Connected to MongoDB database '{db.name}' and collection '{collection_name}'.")
 
     # Set up the Postgres connection
