@@ -16,6 +16,10 @@ class Group(BaseModel):
     admin_username: str
     users: str
 
+class ChatRequest(BaseModel):
+    chat_id: str
+    chat_name: str
+
 class AddGroupRequest(BaseModel):
     group_name: str
 

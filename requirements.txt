@@ -6,3 +6,4 @@ python-dotenv
 PyJWT
 passlib
 pydantic
+pymongo

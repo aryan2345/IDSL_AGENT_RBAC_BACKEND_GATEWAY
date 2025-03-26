@@ -20,6 +20,7 @@ CREATE TABLE user_groups (
 
 CREATE TABLE chats (
     chat_id VARCHAR PRIMARY KEY,
+    chat_name VARCHAR,
     user_id VARCHAR REFERENCES users(user_id),
     chat_content TEXT,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
