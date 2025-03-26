@@ -5,6 +5,9 @@ import hashlib
 from typing import Optional
 from fastapi import HTTPException, status, Request
 from database.postgres import PostgresSQL
+import logging
+
+logger = logging.getLogger(__name__)
 
 SECRET_KEY = os.getenv("SECRET_KEY", "Thebrownfoxjumpsoverthereiver")  # Use a more secure key in production!
 ALGORITHM = "HS256"

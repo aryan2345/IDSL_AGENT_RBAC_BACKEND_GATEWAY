@@ -25,3 +25,13 @@ class AddUserRequest(BaseModel):
     role: str
     group_id: str
     is_admin: bool
+
+class UpdateUserRoleRequest(BaseModel):
+    user_id: str
+    role: str
+
+class DeleteUserRequest(BaseModel):
+    user_id: str
+
+class DeleteGroupRequest(BaseModel):
+    group_id: str

@@ -11,7 +11,7 @@ db = PostgresSQL()
 @login_router.post("/login")
 async def login(user: UserLogin):
     # Validate user
-    user_data = db.fetch_one("SELECT * FROM users WHERE username = %s", (user.username,))
+    user_data = db.fetch_one("SELECT * FROM users WHERE username = %s AND role != 'deactivated'", (user.username,))
     if not user_data or user_data['password_hash'] != hash_password(user.password):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid credentials")
 
