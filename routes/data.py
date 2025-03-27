@@ -171,7 +171,7 @@ async def delete_group(request: DeleteGroupRequest, current_user: dict = Depends
 
     return {"message": "Group deleted successfully", "group_id": request.group_id}
 
-@data_router.post("/data/fetch_user_information")
+@data_router.get("/data/fetch_user_information")
 async def fetch_user_information(current_user: dict = Depends(verify_token)):
     try:
         # Fetch user information from the PostgreSQL 'users' table
