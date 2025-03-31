@@ -1,9 +1,9 @@
-CREATE TABLE groups (
+CREATE TABLE IF NOT EXISTS groups (
     group_id VARCHAR PRIMARY KEY,
     group_name VARCHAR NOT NULL
 );
 
-CREATE TABLE users (
+CREATE TABLE IF NOT EXISTS users (
     user_id VARCHAR PRIMARY KEY,
     username VARCHAR UNIQUE NOT NULL,
     password_hash VARCHAR NOT NULL,  -- Use a hashed password
@@ -11,14 +11,14 @@ CREATE TABLE users (
     group_id VARCHAR REFERENCES groups(group_id) ON DELETE CASCADE
 );
 
-CREATE TABLE user_groups (
+CREATE TABLE IF NOT EXISTS user_groups (
     user_id VARCHAR REFERENCES users(user_id),
     group_id VARCHAR REFERENCES groups(group_id),
     is_admin BOOLEAN DEFAULT FALSE,  -- Flag to indicate group admin
     PRIMARY KEY (user_id, group_id)
 );
 
-CREATE TABLE chats (
+CREATE TABLE IF NOT EXISTS chats (
     chat_id VARCHAR PRIMARY KEY,
     chat_name VARCHAR,
     user_id VARCHAR REFERENCES users(user_id),
@@ -26,7 +26,7 @@ CREATE TABLE chats (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
-CREATE TABLE user_sessions (
+CREATE TABLE IF NOT EXISTS user_sessions (
     session_id VARCHAR PRIMARY KEY,
     user_id VARCHAR NOT NULL,
     token VARCHAR NOT NULL,

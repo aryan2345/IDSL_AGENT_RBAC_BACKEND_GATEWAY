@@ -32,6 +32,8 @@ def startup():
     # Set up the Postgres connection
     db = PostgresSQL()
     # Check if there are any entries in the users table
+    with open('./database/create_tables.sql', 'r') as sql:
+        db.execute_query(sql.read())
     result = db.fetch_one("SELECT COUNT(*) FROM users")
 
     if result["count"] == 0:  # If no users exist, insert the admin user
