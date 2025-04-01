@@ -3,7 +3,7 @@ import logging
 from fastapi import APIRouter, Depends, HTTPException
 
 from database.mongo import MongoDB
-from schema.models import ChatRequest
+from schema.models import ChatRequest, UpdateChatRequest
 from utils.helper import verify_token, db
 
 chat_router = APIRouter()
@@ -57,4 +57,16 @@ async def get_conversation_history(request: ChatRequest ,current_user: dict = De
     except HTTPException as e:
         logger.error(e)
         # If an error occurs (e.g., chat not found), raise HTTPException with appropriate status
+        raise HTTPException(status_code=e.status_code, detail=e.detail)
+
+
+@chat_router.post("/chat/update_conversation")
+async def update_conversation(request: UpdateChatRequest, current_user: dict = Depends(verify_token)):
+    try:
+        new_chat = request.chat
+        for chat_element in new_chat:
+            mongo.insert_chat(request.chat_id, chat_element)
+
+    except HTTPException as e:
+        logger.error(e)
         raise HTTPException(status_code=e.status_code, detail=e.detail)

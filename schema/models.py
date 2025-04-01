@@ -1,3 +1,5 @@
+from typing import List, Dict
+
 from pydantic import BaseModel
 
 class UserLogin(BaseModel):
@@ -19,6 +21,10 @@ class Group(BaseModel):
 class ChatRequest(BaseModel):
     chat_id: str
     chat_name: str
+
+class UpdateChatRequest(BaseModel):
+    chat_id: str
+    chat: List[Dict[str, str]]
 
 class AddGroupRequest(BaseModel):
     group_name: str
