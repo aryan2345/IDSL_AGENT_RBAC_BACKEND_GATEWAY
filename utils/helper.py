@@ -11,7 +11,7 @@ logger = logging.getLogger(__name__)
 
 SECRET_KEY = os.getenv("SECRET_KEY", "Thebrownfoxjumpsoverthereiver")  # Use a more secure key in production!
 ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_MINUTES = 5
+ACCESS_TOKEN_EXPIRE_MINUTES = 60
 db = PostgresSQL()
 
 def hash_password(password: str) -> str:
