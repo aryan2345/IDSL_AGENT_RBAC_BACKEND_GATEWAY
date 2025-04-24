@@ -12,10 +12,8 @@ services:
     depends_on:
       db:
         condition: service_healthy
-      mongo:
-        condition: service_started
     networks:
-      - app-network
+      - backend_network
     volumes:
       - .:/app
 
