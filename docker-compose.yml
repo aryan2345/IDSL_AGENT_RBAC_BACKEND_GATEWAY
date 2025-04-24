@@ -1,11 +1,9 @@
-version: "3.8"
-
 services:
   fastapi:
     container_name: fastapi_app
     build: .
     ports:
-      - "8000:8000"
+      - "8001:8001"
     environment:
       - DATABASE_URL=postgresql://postgres:postgres@db:5432/mydb
       - MONGO_URL=mongodb://mongo:27017/mydb
