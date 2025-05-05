@@ -45,7 +45,7 @@ services:
     volumes:
       - mongo-data:/data/db
     networks:
-      - app-network
+      - backend_network
 
 networks:
   backend_network:
