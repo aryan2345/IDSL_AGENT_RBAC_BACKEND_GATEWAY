@@ -10,6 +10,8 @@ services:
     depends_on:
       db:
         condition: service_healthy
+      mongo:
+        condition: service_healthy
     networks:
       - backend_network
     volumes:
@@ -35,15 +37,15 @@ services:
       start_period: 10s
       timeout: 5s
 
-#  mongo:
-#    container_name: mongodb
-#    image: mongo:latest
-#    ports:
-#      - "27017:27017"
-#    volumes:
-#      - mongo-data:/data/db
-#    networks:
-#      - app-network
+  mongo:
+    container_name: mongodb
+    image: mongo:latest
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo-data:/data/db
+    networks:
+      - app-network
 
 networks:
   backend_network:
