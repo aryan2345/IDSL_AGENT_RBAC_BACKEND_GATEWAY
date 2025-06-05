@@ -12,8 +12,8 @@ CREATE TABLE IF NOT EXISTS users (
 );
 
 CREATE TABLE IF NOT EXISTS user_groups (
-    user_id VARCHAR REFERENCES users(user_id),
-    group_id VARCHAR REFERENCES groups(group_id),
+    user_id VARCHAR REFERENCES users(user_id) ON DELETE CASCADE,
+    group_id VARCHAR REFERENCES groups(group_id) ON DELETE CASCADE,
     is_admin BOOLEAN DEFAULT FALSE,  -- Flag to indicate group admin
     PRIMARY KEY (user_id, group_id)
 );
@@ -21,7 +21,7 @@ CREATE TABLE IF NOT EXISTS user_groups (
 CREATE TABLE IF NOT EXISTS chats (
     chat_id VARCHAR PRIMARY KEY,
     chat_name VARCHAR,
-    user_id VARCHAR REFERENCES users(user_id),
+    user_id VARCHAR REFERENCES users(user_id) ON DELETE CASCADE,
     chat_content TEXT,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
