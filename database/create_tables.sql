@@ -20,9 +20,9 @@ CREATE TABLE IF NOT EXISTS user_groups (
 
 CREATE TABLE IF NOT EXISTS chats (
     chat_id VARCHAR PRIMARY KEY,
-    chat_name VARCHAR,
+    chat_name VARCHAR NOT NULL,
     user_id VARCHAR REFERENCES users(user_id) ON DELETE CASCADE,
-    chat_content TEXT,
+    chat_content TEXT NOT NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -32,4 +32,26 @@ CREATE TABLE IF NOT EXISTS user_sessions (
     token VARCHAR NOT NULL,
     expiry_timestamp TIMESTAMP NOT NULL,
     FOREIGN KEY (user_id) REFERENCES users(user_id) ON DELETE CASCADE
+);
+CREATE TABLE IF NOT EXISTS audit (
+    id SERIAL PRIMARY KEY,
+    user_id VARCHAR NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
+    endpoint VARCHAR NOT NULL,
+    status_code INTEGER NOT NULL,
+    timestamp TIMESTAMP NOT NULL,
+    response_summary TEXT
+);
+CREATE TABLE project (
+    project_id SERIAL PRIMARY KEY,
+    project_name VARCHAR NOT NULL
+);
+
+CREATE TABLE IDSL_users (
+    user_id VARCHAR NOT NULL,
+    project_id INTEGER NOT NULL,
+    group_id VARCHAR NOT NULL,
+    role VARCHAR NOT NULL CHECK (role IN ('group_admin', 'user')),
+    FOREIGN KEY (user_id) REFERENCES users(user_id) ON DELETE CASCADE,
+    FOREIGN KEY (project_id) REFERENCES project(project_id) ON DELETE CASCADE,
+    FOREIGN KEY (group_id) REFERENCES groups(group_id) ON DELETE CASCADE
 );
