@@ -166,32 +166,8 @@ async def fetch_user_information(current_user: dict = Depends(verify_token)):
         log_audit(current_user["user_id"], "/data/fetch_user_information", 500, f"Error: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Error fetching user information: {str(e)}")
 
-@data_router.get("/data/get_projects")
-async def get_projects(current_user: dict = Depends(verify_token)):
-    if current_user["role"] != "system_admin":
-        log_audit(current_user["user_id"], "/data/get_projects", 403, "Forbidden access")
-        raise HTTPException(status_code=403, detail="Insufficient permissions")
 
-    try:
-        result = db.fetch_all("SELECT project_id, project_name FROM projects")
-        log_audit(current_user["user_id"], "/data/get_projects", 200, "Fetched all projects")
-        return result
-    except Exception as e:
-        log_audit(current_user["user_id"], "/data/get_projects", 500, str(e))
-        raise HTTPException(status_code=500, detail="Error fetching projects")
 
-@data_router.post("/data/add_project", status_code=status.HTTP_201_CREATED)
-async def add_project(request: AddProjectRequest, current_user: dict = Depends(verify_token)):
-    if current_user["role"] != "system_admin":
-        log_audit(current_user["user_id"], "/data/add_project", 403, "Forbidden access")
-        raise HTTPException(status_code=403, detail="Insufficient permissions")
 
-    try:
-        db.execute_query("INSERT INTO projects (project_name) VALUES (%s)", (request.project_name,))
-        log_audit(current_user["user_id"], "/data/add_project", 201, f"Project '{request.project_name}' added")
-        return {"message": "Project added successfully", "project_name": request.project_name}
-    except Exception as e:
-        log_audit(current_user["user_id"], "/data/add_project", 500, str(e))
-        raise HTTPException(status_code=500, detail="Error adding project")
 
 

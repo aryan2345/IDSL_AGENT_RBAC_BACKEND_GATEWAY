@@ -47,7 +47,7 @@ def log_audit(user_id: str, endpoint: str, status_code: int, summary: str = ""):
     except Exception as e:
         logger.error(f"Failed to log audit entry: {e}")
 
-# Token Validation using HTTPBearer
+# ✅ Token Validation using HTTPBearer
 def verify_token(credentials: HTTPAuthorizationCredentials = Depends(bearer_scheme)):
     token = credentials.credentials
 
@@ -64,11 +64,13 @@ def verify_token(credentials: HTTPAuthorizationCredentials = Depends(bearer_sche
     try:
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
         user_id: str = payload.get("sub")
+        username: str = payload.get("username")
         role: str = payload.get("role")
 
-        if not user_id or not role:
+        if not user_id or not username or not role:
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token payload")
 
-        return {"user_id": user_id, "role": role}
+        return {"user_id": user_id, "username": username, "role": role}
+
     except Exception as e:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=f"Invalid token - {e}")

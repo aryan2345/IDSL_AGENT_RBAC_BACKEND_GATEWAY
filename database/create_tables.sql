@@ -7,8 +7,6 @@ CREATE TABLE IF NOT EXISTS users (
     user_id VARCHAR PRIMARY KEY,
     username VARCHAR UNIQUE NOT NULL,
     password_hash VARCHAR NOT NULL,  -- Use a hashed password
-    role VARCHAR CHECK(role IN ('system_admin', 'group_admin', 'user')) NOT NULL,
-    group_id VARCHAR REFERENCES groups(group_id) ON DELETE CASCADE
 );
 
 CREATE TABLE IF NOT EXISTS user_groups (

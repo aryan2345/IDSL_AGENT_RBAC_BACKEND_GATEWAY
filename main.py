@@ -8,7 +8,7 @@ from routes.data import data_router
 from routes.chat import chat_router
 from database.postgres import PostgresSQL
 from utils.helper import hash_password
-from fastapi.openapi.utils import get_openapi  # 🆕 for Swagger Bearer support
+from fastapi.openapi.utils import get_openapi
 
 # Logging configuration
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
@@ -25,28 +25,28 @@ app.include_router(chat_router)
 def startup():
     # MongoDB setup
     client = MongoClient(os.getenv("MONGO_URL"))
-    db = client.get_database(name='mydb')
+    db_mongo = client.get_database(name='mydb')
     collection_name = "chats"
 
-    if collection_name not in db.list_collection_names():
-        db.create_collection(collection_name, check_exists=True)
+    if collection_name not in db_mongo.list_collection_names():
+        db_mongo.create_collection(collection_name, check_exists=True)
 
-    logging.info(f"Connected to MongoDB database '{db.name}' and collection '{collection_name}'.")
+    logging.info(f"Connected to MongoDB database '{db_mongo.name}' and collection '{collection_name}'.")
 
     # PostgreSQL setup
     db = PostgresSQL()
     with open('./database/create_tables.sql', 'r') as sql:
         db.execute_query(sql.read())
-    result = db.fetch_one("SELECT COUNT(*) FROM users")
 
+    result = db.fetch_one("SELECT COUNT(*) FROM users")
     if result["count"] == 0:
         user_id = str(uuid.uuid4())
         hashed_password = hash_password("admin")
         db.execute_query(
-            "INSERT INTO users (user_id, username, password_hash, role) VALUES (%s, %s, %s, %s)",
-            (user_id, "admin", hashed_password, "system_admin")
+            "INSERT INTO users (user_id, username, password_hash) VALUES (%s, %s, %s)",
+            (user_id, "admin", hashed_password)
         )
-        logging.info("No users found in the system. Admin user created!")
+        logging.info("Admin user created as the first system user.")
 
 @app.get("/health")
 def health():
