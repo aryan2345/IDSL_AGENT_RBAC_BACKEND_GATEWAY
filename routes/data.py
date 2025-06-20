@@ -202,9 +202,37 @@ async def fetch_user_information(current_user: dict = Depends(verify_token)):
 
 
 # ---------- Project & IDSL_users APIs ----------
-
 @data_router.get("/data/get_projects")
 async def get_projects(current_user: dict = Depends(verify_token)):
     if not is_admin_user(current_user):
-        raise HTTPException(status_code=403, detail="Unauthorized")
-    return db.fetch_all("SELECT * FROM project")
+        log_audit(current_user["user_id"], "/data/get_projects", 403, "Forbidden access")
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Insufficient permissions")
+
+    try:
+        # Get all projects with additional details
+        query = """
+        SELECT 
+            p.project_id,
+            p.project_name,
+            COUNT(DISTINCT iu.user_id) as total_users,
+            COUNT(DISTINCT iu.group_id) as total_groups,
+            STRING_AGG(DISTINCT g.group_name, ', ') as group_names
+        FROM project p
+        LEFT JOIN IDSL_users iu ON p.project_id = iu.project_id
+        LEFT JOIN groups g ON iu.group_id = g.group_id
+        GROUP BY p.project_id, p.project_name
+        ORDER BY p.project_id
+        """
+
+        projects = db.fetch_all(query)
+        log_audit(current_user["user_id"], "/data/get_projects", 200, "Fetched all projects")
+
+        return {
+            "message": "Projects fetched successfully",
+            "total_projects": len(projects),
+            "projects": projects
+        }
+
+    except Exception as e:
+        log_audit(current_user["user_id"], "/data/get_projects", 500, f"Error: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error fetching projects: {str(e)}")
