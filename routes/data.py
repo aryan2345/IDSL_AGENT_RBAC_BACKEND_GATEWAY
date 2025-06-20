@@ -89,14 +89,16 @@ async def add_user(request: AddUserRequest, current_user: dict = Depends(verify_
     password_hash_val = hash_password(request.password)
 
     try:
-        # First, check if the group exists
-        group_check = db.fetch_one("SELECT group_id FROM groups WHERE group_id = %s", (request.group_id,))
-        if not group_check:
+        # First, get the group_id from group_name
+        group_record = db.fetch_one("SELECT group_id FROM groups WHERE group_name = %s", (request.group_name,))
+        if not group_record:
             try:
-                log_audit(current_user["user_id"], "/data/add_user", 400, f"Group {request.group_id} does not exist")
+                log_audit(current_user["user_id"], "/data/add_user", 400, f"Group '{request.group_name}' does not exist")
             except:
                 pass
-            raise HTTPException(status_code=400, detail="Invalid group_id: Group does not exist")
+            raise HTTPException(status_code=400, detail=f"Invalid group_name: Group '{request.group_name}' does not exist")
+
+        group_id = group_record["group_id"]
 
         # Check if username already exists
         username_check = db.fetch_one("SELECT user_id FROM users WHERE username = %s", (request.username,))
@@ -116,15 +118,15 @@ async def add_user(request: AddUserRequest, current_user: dict = Depends(verify_
         # Then add to user_groups
         db.execute_query(
             "INSERT INTO user_groups (user_id, group_id, is_admin) VALUES (%s, %s, %s)",
-            (user_id, request.group_id, request.is_admin)
+            (user_id, group_id, request.is_admin)
         )
 
         try:
-            log_audit(current_user["user_id"], "/data/add_user", 201, f"User '{request.username}' added")
+            log_audit(current_user["user_id"], "/data/add_user", 201, f"User '{request.username}' added to group '{request.group_name}'")
         except:
             pass
 
-        return {"message": "User added successfully", "user_id": user_id}
+        return {"message": "User added successfully", "user_id": user_id, "group_name": request.group_name}
 
     except HTTPException:
         # Re-raise HTTP exceptions (like validation errors)
@@ -199,6 +201,8 @@ async def fetch_user_information(current_user: dict = Depends(verify_token)):
     except Exception as e:
         log_audit(current_user["user_id"], "/data/fetch_user_information", 500, f"Error: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Error fetching user information: {str(e)}")
+
+
 
 
 # ---------- Project & IDSL_users APIs ----------
