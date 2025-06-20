@@ -89,16 +89,35 @@ async def add_user(request: AddUserRequest, current_user: dict = Depends(verify_
     password_hash_val = hash_password(request.password)
 
     try:
-        db.conn.autocommit = False
-        db.cursor.execute(
+        # First, check if the group exists
+        group_check = db.fetch_one("SELECT group_id FROM groups WHERE group_id = %s", (request.group_id,))
+        if not group_check:
+            try:
+                log_audit(current_user["user_id"], "/data/add_user", 400, f"Group {request.group_id} does not exist")
+            except:
+                pass
+            raise HTTPException(status_code=400, detail="Invalid group_id: Group does not exist")
+
+        # Check if username already exists
+        username_check = db.fetch_one("SELECT user_id FROM users WHERE username = %s", (request.username,))
+        if username_check:
+            try:
+                log_audit(current_user["user_id"], "/data/add_user", 400, f"Username '{request.username}' already exists")
+            except:
+                pass
+            raise HTTPException(status_code=400, detail="Username already exists")
+
+        # Insert user first
+        db.execute_query(
             "INSERT INTO users (user_id, username, password_hash) VALUES (%s, %s, %s)",
             (user_id, request.username, password_hash_val)
         )
-        db.cursor.execute(
+
+        # Then add to user_groups
+        db.execute_query(
             "INSERT INTO user_groups (user_id, group_id, is_admin) VALUES (%s, %s, %s)",
             (user_id, request.group_id, request.is_admin)
         )
-        db.conn.commit()
 
         try:
             log_audit(current_user["user_id"], "/data/add_user", 201, f"User '{request.username}' added")
@@ -107,16 +126,15 @@ async def add_user(request: AddUserRequest, current_user: dict = Depends(verify_
 
         return {"message": "User added successfully", "user_id": user_id}
 
+    except HTTPException:
+        # Re-raise HTTP exceptions (like validation errors)
+        raise
     except Exception as e:
-        db.conn.rollback()
         try:
-            log_audit(current_user["user_id"], "/data/add_user", 500, f"Error: {str(e)}")
+            log_audit(current_user["user_id"], "/data/add_user", 500, f"Database error: {str(e)}")
         except:
             pass
-        raise HTTPException(status_code=500, detail="Error adding user or assigning group")
-
-    finally:
-        db.conn.autocommit = True
+        raise HTTPException(status_code=500, detail=f"Database error: {str(e)}")
 
 
 @data_router.post("/data/update_user", status_code=status.HTTP_201_CREATED)
@@ -190,7 +208,3 @@ async def get_projects(current_user: dict = Depends(verify_token)):
     if not is_admin_user(current_user):
         raise HTTPException(status_code=403, detail="Unauthorized")
     return db.fetch_all("SELECT * FROM project")
-
-
-
-
