@@ -1,0 +1,58 @@
+services:
+  fastapi:
+    container_name: fastapi_app
+    build: .
+    ports:
+      - "8001:8001"
+    environment:
+      - DATABASE_URL=postgresql://postgres:postgres@db:5432/mydb
+      - MONGO_URL=mongodb://mongodb:27017/mydb
+    depends_on:
+      db:
+        condition: service_healthy
+      mongo:
+        condition: service_started
+    networks:
+      - backend_network
+    volumes:
+      - .:/app
+
+  db:
+    container_name: postgres_db
+    image: postgres:13
+    environment:
+      - POSTGRES_USER=postgres  # Database user
+      - POSTGRES_PASSWORD=postgres  # Database password
+      - POSTGRES_DB=mydb  # Database name
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    networks:
+      - backend_network
+    healthcheck:
+      test: [ "CMD", "pg_isready", "-U", "postgres", "-d", "mydb" ]
+      interval: 10s
+      retries: 5
+      start_period: 10s
+      timeout: 5s
+
+  mongo:
+    container_name: mongodb
+    image: mongo:latest
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo-data:/data/db
+    networks:
+      - backend_network
+
+networks:
+  backend_network:
+    external: true
+    name: shared_backend_network
+    driver: bridge
+
+volumes:
+  postgres-data:
+  mongo-data:
