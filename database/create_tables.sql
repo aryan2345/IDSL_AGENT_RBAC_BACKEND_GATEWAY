@@ -6,7 +6,7 @@ CREATE TABLE IF NOT EXISTS groups (
 CREATE TABLE IF NOT EXISTS users (
     user_id VARCHAR PRIMARY KEY,
     username VARCHAR UNIQUE NOT NULL,
-    password_hash VARCHAR NOT NULL,  -- Use a hashed password
+    password_hash VARCHAR NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS user_groups (
@@ -31,6 +31,7 @@ CREATE TABLE IF NOT EXISTS user_sessions (
     expiry_timestamp TIMESTAMP NOT NULL,
     FOREIGN KEY (user_id) REFERENCES users(user_id) ON DELETE CASCADE
 );
+
 CREATE TABLE IF NOT EXISTS audit (
     id SERIAL PRIMARY KEY,
     user_id VARCHAR NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
@@ -39,12 +40,13 @@ CREATE TABLE IF NOT EXISTS audit (
     timestamp TIMESTAMP NOT NULL,
     response_summary TEXT
 );
-CREATE TABLE project (
+
+CREATE TABLE IF NOT EXISTS project (
     project_id SERIAL PRIMARY KEY,
     project_name VARCHAR NOT NULL
 );
 
-CREATE TABLE IDSL_users (
+CREATE TABLE IF NOT EXISTS IDSL_users (
     user_id VARCHAR NOT NULL,
     project_id INTEGER NOT NULL,
     group_id VARCHAR NOT NULL,

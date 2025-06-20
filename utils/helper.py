@@ -23,7 +23,7 @@ bearer_scheme = HTTPBearer()
 def hash_password(password: str) -> str:
     return hashlib.sha256(password.encode()).hexdigest()
 
-# 🔑 Token Creation
+# 🔑 Token Creation (no role inside)
 def create_access_token(data: dict, expires_delta: Optional[datetime.timedelta] = None):
     to_encode = data.copy()
     expire = datetime.datetime.now() + (
@@ -51,12 +51,12 @@ def log_audit(user_id: str, endpoint: str, status_code: int, summary: str = ""):
 def verify_token(credentials: HTTPAuthorizationCredentials = Depends(bearer_scheme)):
     token = credentials.credentials
 
-    # Token existence check
+    # Check if token exists in user_sessions
     user_session = db.fetch_one("SELECT * FROM user_sessions WHERE token = %s", (token,))
     if not user_session:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token")
 
-    # Expiry check
+    # Check expiration
     if user_session['expiry_timestamp'] < datetime.datetime.now():
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Token has expired")
 
@@ -64,11 +64,17 @@ def verify_token(credentials: HTTPAuthorizationCredentials = Depends(bearer_sche
     try:
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
         user_id: str = payload.get("sub")
-        username: str = payload.get("username")
-        role: str = payload.get("role")
 
-        if not user_id or not username or not role:
+        if not user_id:
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token payload")
+
+        # Fetch username from DB
+        user = db.fetch_one("SELECT username FROM users WHERE user_id = %s", (user_id,))
+        if not user:
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User not found")
+
+        username = user["username"]
+        role = "system_admin" if username == "admin" else "user"
 
         return {"user_id": user_id, "username": username, "role": role}
 

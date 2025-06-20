@@ -7,7 +7,6 @@ from utils.helper import hash_password, create_access_token, log_audit
 login_router = APIRouter(tags=["login"])
 db = PostgresSQL()
 
-
 @login_router.post("/login")
 async def login(user: UserLogin):
     # Step 1: Validate credentials
@@ -21,30 +20,22 @@ async def login(user: UserLogin):
 
     user_id = user_data["user_id"]
 
-    # Step 2: Determine role
-    if user.username == "admin":
-        role = "system_admin"
-    else:
-        role_data = db.fetch_one("SELECT role FROM IDSL_users WHERE user_id = %s LIMIT 1", (user_id,))
-        role = role_data["role"] if role_data else "user"
+    # Step 2: Generate token (encode only sub and username)
+    access_token, expire = create_access_token(data={"sub": user_id, "username": user.username})
 
-    # Step 3: Generate token
-    access_token, expire = create_access_token(data={"sub": user_id, "role": role})
-
-    # Step 4: Store session
+    # Step 3: Store session
     session_id = str(uuid.uuid4())
     db.execute_query(
         "INSERT INTO user_sessions (session_id, user_id, token, expiry_timestamp) VALUES (%s, %s, %s, %s)",
         (session_id, user_id, access_token, expire)
     )
 
-    # Step 5: Log audit
+    # Step 4: Log audit
     log_audit(user_id, "/login", 200, "Login successful")
 
     return {
         "access_token": access_token,
         "token_type": "bearer",
         "user_id": user_id,
-        "role": role,
-        "username": user.username,
+        "username": user.username
     }

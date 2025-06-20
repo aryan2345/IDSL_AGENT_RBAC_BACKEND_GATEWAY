@@ -4,24 +4,30 @@ from fastapi import APIRouter, HTTPException, status, Depends, Request
 from utils.helper import verify_token, db, hash_password, log_audit
 from schema.models import (
     User, Group, AddGroupRequest, AddUserRequest,
-    UpdateUserRoleRequest, DeleteUserRequest, DeleteGroupRequest
+    UpdateUserRoleRequest, DeleteUserRequest, DeleteGroupRequest,
+    DeleteProjectRequest, ProjectRequest,
+    ProjectUserRequest, ProjectUserUpdateRequest
 )
 
 data_router = APIRouter()
 
+
+def is_admin_user(current_user: dict):
+    return current_user.get("username") == "admin"
+
 @data_router.get("/data/get_users")
 async def get_users(request: Request, current_user: dict = Depends(verify_token)):
-    if current_user["role"] != "system_admin":
+    if not is_admin_user(current_user):
         log_audit(current_user["user_id"], "/data/get_users", 403, "Forbidden access")
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Insufficient permissions")
 
     try:
         query = """
-        SELECT u.user_id, u.username, u.role, COALESCE(g.group_name, '') AS group_name
+        SELECT u.user_id, u.username, 
+               COALESCE(g.group_name, '') AS group_name
         FROM users u
         LEFT JOIN user_groups ug ON u.user_id = ug.user_id
         LEFT JOIN groups g ON ug.group_id = g.group_id
-        WHERE u.role != 'deactivated'
         """
         result = db.fetch_all(query)
         log_audit(current_user["user_id"], "/data/get_users", 200, "Fetched all users")
@@ -32,7 +38,7 @@ async def get_users(request: Request, current_user: dict = Depends(verify_token)
 
 @data_router.get("/data/get_groups")
 async def get_all_groups(request: Request, current_user: dict = Depends(verify_token)):
-    if current_user["role"] != "system_admin":
+    if not is_admin_user(current_user):
         log_audit(current_user["user_id"], "/data/get_groups", 403, "Forbidden access")
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Insufficient permissions")
 
@@ -57,7 +63,7 @@ async def get_all_groups(request: Request, current_user: dict = Depends(verify_t
 
 @data_router.post("/data/add_group", status_code=status.HTTP_201_CREATED)
 async def add_group(request: AddGroupRequest, current_user: dict = Depends(verify_token)):
-    if current_user["role"] != "system_admin":
+    if not is_admin_user(current_user):
         log_audit(current_user["user_id"], "/data/add_group", 403, "Forbidden access")
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Insufficient permissions")
 
@@ -72,37 +78,55 @@ async def add_group(request: AddGroupRequest, current_user: dict = Depends(verif
 
 @data_router.post("/data/add_user", status_code=status.HTTP_201_CREATED)
 async def add_user(request: AddUserRequest, current_user: dict = Depends(verify_token)):
-    if current_user["role"] != "system_admin":
-        log_audit(current_user["user_id"], "/data/add_user", 403, "Forbidden access")
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Insufficient permissions")
+    if not is_admin_user(current_user):
+        try:
+            log_audit(current_user["user_id"], "/data/add_user", 403, "Forbidden access")
+        except:
+            pass
+        raise HTTPException(status_code=403, detail="Insufficient permissions")
 
     user_id = str(uuid.uuid4())
     password_hash_val = hash_password(request.password)
 
     try:
-        db.execute_query("INSERT INTO users (user_id, username, password_hash, role) VALUES (%s, %s, %s, %s)",
-                         (user_id, request.username, password_hash_val, request.role))
-        db.execute_query("INSERT INTO user_groups (user_id, group_id, is_admin) VALUES (%s, %s, %s)",
-                         (user_id, request.group_id, request.is_admin))
-        log_audit(current_user["user_id"], "/data/add_user", 201, f"User '{request.username}' added")
-        return {"message": "User added successfully", "user_id": user_id, "username": request.username}
+        db.conn.autocommit = False
+        db.cursor.execute(
+            "INSERT INTO users (user_id, username, password_hash) VALUES (%s, %s, %s)",
+            (user_id, request.username, password_hash_val)
+        )
+        db.cursor.execute(
+            "INSERT INTO user_groups (user_id, group_id, is_admin) VALUES (%s, %s, %s)",
+            (user_id, request.group_id, request.is_admin)
+        )
+        db.conn.commit()
+
+        try:
+            log_audit(current_user["user_id"], "/data/add_user", 201, f"User '{request.username}' added")
+        except:
+            pass
+
+        return {"message": "User added successfully", "user_id": user_id}
+
     except Exception as e:
-        log_audit(current_user["user_id"], "/data/add_user", 500, f"Error: {str(e)}")
+        db.conn.rollback()
+        try:
+            log_audit(current_user["user_id"], "/data/add_user", 500, f"Error: {str(e)}")
+        except:
+            pass
         raise HTTPException(status_code=500, detail="Error adding user or assigning group")
+
+    finally:
+        db.conn.autocommit = True
+
 
 @data_router.post("/data/update_user", status_code=status.HTTP_201_CREATED)
 async def update_user(request: UpdateUserRoleRequest, current_user: dict = Depends(verify_token)):
-    if current_user["role"] != "system_admin":
+    if not is_admin_user(current_user):
         log_audit(current_user["user_id"], "/data/update_user", 403, "Forbidden access")
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Insufficient permissions")
 
-    user = db.fetch_one("SELECT * FROM users WHERE user_id = %s", (request.user_id,))
-    if not user:
-        log_audit(current_user["user_id"], "/data/update_user", 404, "User not found")
-        raise HTTPException(status_code=404, detail="User not found")
-
     try:
-        db.execute_query("UPDATE users SET role = %s WHERE user_id = %s", (request.role, request.user_id))
+        db.execute_query("UPDATE IDSL_users SET role = %s WHERE user_id = %s", (request.role, request.user_id))
         log_audit(current_user["user_id"], "/data/update_user", 201, f"Updated role for user {request.user_id}")
         return {"message": "User role updated successfully", "user_id": request.user_id, "new_role": request.role}
     except Exception as e:
@@ -111,37 +135,29 @@ async def update_user(request: UpdateUserRoleRequest, current_user: dict = Depen
 
 @data_router.post("/data/delete_user", status_code=status.HTTP_201_CREATED)
 async def delete_user(request: DeleteUserRequest, current_user: dict = Depends(verify_token)):
-    if current_user["role"] != "system_admin":
+    if not is_admin_user(current_user):
         log_audit(current_user["user_id"], "/data/delete_user", 403, "Forbidden access")
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Insufficient permissions")
 
-    user = db.fetch_one("SELECT * FROM users WHERE user_id = %s", (request.user_id,))
-    if not user:
-        log_audit(current_user["user_id"], "/data/delete_user", 404, "User not found")
-        raise HTTPException(status_code=404, detail="User not found")
-
     try:
         db.execute_query("DELETE FROM user_groups WHERE user_id = %s", (request.user_id,))
-        db.execute_query("UPDATE users SET role = 'deactivated' WHERE user_id = %s", (request.user_id,))
-        log_audit(current_user["user_id"], "/data/delete_user", 201, f"Deactivated user {request.user_id}")
-        return {"message": "User deactivated successfully", "user_id": request.user_id}
+        db.execute_query("DELETE FROM IDSL_users WHERE user_id = %s", (request.user_id,))
+        db.execute_query("DELETE FROM users WHERE user_id = %s", (request.user_id,))
+        log_audit(current_user["user_id"], "/data/delete_user", 201, f"Deleted user {request.user_id}")
+        return {"message": "User deleted successfully", "user_id": request.user_id}
     except Exception as e:
         log_audit(current_user["user_id"], "/data/delete_user", 500, f"Error: {str(e)}")
-        raise HTTPException(status_code=500, detail="Error deactivating user")
+        raise HTTPException(status_code=500, detail="Error deleting user")
 
 @data_router.post("/data/delete_group", status_code=status.HTTP_201_CREATED)
 async def delete_group(request: DeleteGroupRequest, current_user: dict = Depends(verify_token)):
-    if current_user["role"] != "system_admin":
+    if not is_admin_user(current_user):
         log_audit(current_user["user_id"], "/data/delete_group", 403, "Forbidden access")
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Insufficient permissions")
 
-    group = db.fetch_one("SELECT * FROM groups WHERE group_id = %s", (request.group_id,))
-    if not group:
-        log_audit(current_user["user_id"], "/data/delete_group", 404, "Group not found")
-        raise HTTPException(status_code=404, detail="Group not found")
-
     try:
         db.execute_query("DELETE FROM user_groups WHERE group_id = %s", (request.group_id,))
+        db.execute_query("DELETE FROM IDSL_users WHERE group_id = %s", (request.group_id,))
         db.execute_query("DELETE FROM groups WHERE group_id = %s", (request.group_id,))
         log_audit(current_user["user_id"], "/data/delete_group", 201, f"Deleted group {request.group_id}")
         return {"message": "Group deleted successfully", "group_id": request.group_id}
@@ -167,7 +183,66 @@ async def fetch_user_information(current_user: dict = Depends(verify_token)):
         raise HTTPException(status_code=500, detail=f"Error fetching user information: {str(e)}")
 
 
+# ---------- Project & IDSL_users APIs ----------
 
+@data_router.get("/data/get_projects")
+async def get_projects(current_user: dict = Depends(verify_token)):
+    if not is_admin_user(current_user):
+        raise HTTPException(status_code=403, detail="Unauthorized")
+    return db.fetch_all("SELECT * FROM project")
 
+@data_router.post("/data/add_project")
+async def add_project(request: ProjectRequest, current_user: dict = Depends(verify_token)):
+    if not is_admin_user(current_user):
+        raise HTTPException(status_code=403, detail="Unauthorized")
+    db.execute_query("INSERT INTO project (project_name) VALUES (%s)", (request.project_name,))
+    return {"message": "Project added successfully"}
 
+@data_router.post("/data/delete_project")
+async def delete_project(request: DeleteProjectRequest, current_user: dict = Depends(verify_token)):
+    if not is_admin_user(current_user):
+        raise HTTPException(status_code=403, detail="Unauthorized")
+    db.execute_query("DELETE FROM project WHERE project_id = %s", (request.project_id,))
+    return {"message": "Project deleted successfully"}
 
+@data_router.get("/data/get_users_for_project")
+async def get_users_for_project(project_id: int, current_user: dict = Depends(verify_token)):
+    if not is_admin_user(current_user):
+        raise HTTPException(status_code=403, detail="Unauthorized")
+    query = """
+    SELECT u.user_id, u.username, i.group_id, i.role
+    FROM IDSL_users i
+    JOIN users u ON i.user_id = u.user_id
+    WHERE i.project_id = %s
+    """
+    return db.fetch_all(query, (project_id,))
+
+@data_router.post("/data/add_user_to_project")
+async def add_user_to_project(request: ProjectUserRequest, current_user: dict = Depends(verify_token)):
+    if not is_admin_user(current_user):
+        raise HTTPException(status_code=403, detail="Unauthorized")
+    db.execute_query(
+        "INSERT INTO IDSL_users (user_id, project_id, group_id, role) VALUES (%s, %s, %s, %s)",
+        (request.user_id, request.project_id, request.group_id, request.role)
+    )
+    return {"message": "User assigned to project"}
+
+@data_router.post("/data/remove_user_from_project")
+async def remove_user_from_project(request: ProjectUserRequest, current_user: dict = Depends(verify_token)):
+    if not is_admin_user(current_user):
+        raise HTTPException(status_code=403, detail="Unauthorized")
+    db.execute_query(
+        "DELETE FROM IDSL_users WHERE user_id = %s AND project_id = %s",
+        (request.user_id, request.project_id)
+    )
+    return {"message": "User removed from project"}
+
+@data_router.post("/data/update_user_role_project")
+async def update_user_role_project(request: ProjectUserUpdateRequest, current_user: dict = Depends(verify_token)):
+    if not is_admin_user(current_user):
+        raise HTTPException(status_code=403, detail="Unauthorized")
+    db.execute_query(
+        "UPDATE IDSL_users SET role = %s, group_id = %s WHERE user_id = %s AND project_id = %s",
+        (request.role, request.group_id, request.user_id, request.project_id)
+    )
+    return {"message": "User role updated in project"}

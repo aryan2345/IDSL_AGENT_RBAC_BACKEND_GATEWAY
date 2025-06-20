@@ -8,16 +8,28 @@ class PostgresSQL:
         self.cursor = self.conn.cursor(cursor_factory=DictCursor)
 
     def execute_query(self, query, params=None):
-        self.cursor.execute(query, params)
-        self.conn.commit()
+        try:
+            self.cursor.execute(query, params)
+            self.conn.commit()
+        except Exception as e:
+            self.conn.rollback()
+            raise e
 
     def fetch_one(self, query, params=None):
-        self.cursor.execute(query, params)
-        return self.cursor.fetchone()
+        try:
+            self.cursor.execute(query, params)
+            return self.cursor.fetchone()
+        except Exception as e:
+            self.conn.rollback()
+            raise e
 
     def fetch_all(self, query, params=None):
-        self.cursor.execute(query, params)
-        return self.cursor.fetchall()
+        try:
+            self.cursor.execute(query, params)
+            return self.cursor.fetchall()
+        except Exception as e:
+            self.conn.rollback()
+            raise e
 
     def close(self):
         self.cursor.close()

@@ -32,9 +32,9 @@ class AddGroupRequest(BaseModel):
 class AddUserRequest(BaseModel):
     username: str
     password: str
-    role: str
     group_id: str
     is_admin: bool
+
 
 class UpdateUserRoleRequest(BaseModel):
     user_id: str
@@ -47,4 +47,21 @@ class DeleteGroupRequest(BaseModel):
     group_id: str
 
 
+class ProjectRequest(BaseModel):
+    project_name: str
+
+class DeleteProjectRequest(BaseModel):
+    project_id: int
+
+class ProjectUserRequest(BaseModel):
+    user_id: str
+    project_id: int
+    group_id: str
+    role: str  # 'group_admin' or 'user'
+
+class ProjectUserUpdateRequest(BaseModel):
+    user_id: str
+    project_id: int
+    group_id: str
+    role: str
 
