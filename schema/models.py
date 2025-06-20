@@ -57,7 +57,7 @@ class ProjectUserRequest(BaseModel):
     user_id: str
     project_id: int
     group_id: str
-    role: str  # 'group_admin' or 'user'
+    role: str
 
 class ProjectUserUpdateRequest(BaseModel):
     user_id: str

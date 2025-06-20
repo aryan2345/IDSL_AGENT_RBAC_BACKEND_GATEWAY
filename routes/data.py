@@ -191,58 +191,6 @@ async def get_projects(current_user: dict = Depends(verify_token)):
         raise HTTPException(status_code=403, detail="Unauthorized")
     return db.fetch_all("SELECT * FROM project")
 
-@data_router.post("/data/add_project")
-async def add_project(request: ProjectRequest, current_user: dict = Depends(verify_token)):
-    if not is_admin_user(current_user):
-        raise HTTPException(status_code=403, detail="Unauthorized")
-    db.execute_query("INSERT INTO project (project_name) VALUES (%s)", (request.project_name,))
-    return {"message": "Project added successfully"}
 
-@data_router.post("/data/delete_project")
-async def delete_project(request: DeleteProjectRequest, current_user: dict = Depends(verify_token)):
-    if not is_admin_user(current_user):
-        raise HTTPException(status_code=403, detail="Unauthorized")
-    db.execute_query("DELETE FROM project WHERE project_id = %s", (request.project_id,))
-    return {"message": "Project deleted successfully"}
 
-@data_router.get("/data/get_users_for_project")
-async def get_users_for_project(project_id: int, current_user: dict = Depends(verify_token)):
-    if not is_admin_user(current_user):
-        raise HTTPException(status_code=403, detail="Unauthorized")
-    query = """
-    SELECT u.user_id, u.username, i.group_id, i.role
-    FROM IDSL_users i
-    JOIN users u ON i.user_id = u.user_id
-    WHERE i.project_id = %s
-    """
-    return db.fetch_all(query, (project_id,))
 
-@data_router.post("/data/add_user_to_project")
-async def add_user_to_project(request: ProjectUserRequest, current_user: dict = Depends(verify_token)):
-    if not is_admin_user(current_user):
-        raise HTTPException(status_code=403, detail="Unauthorized")
-    db.execute_query(
-        "INSERT INTO IDSL_users (user_id, project_id, group_id, role) VALUES (%s, %s, %s, %s)",
-        (request.user_id, request.project_id, request.group_id, request.role)
-    )
-    return {"message": "User assigned to project"}
-
-@data_router.post("/data/remove_user_from_project")
-async def remove_user_from_project(request: ProjectUserRequest, current_user: dict = Depends(verify_token)):
-    if not is_admin_user(current_user):
-        raise HTTPException(status_code=403, detail="Unauthorized")
-    db.execute_query(
-        "DELETE FROM IDSL_users WHERE user_id = %s AND project_id = %s",
-        (request.user_id, request.project_id)
-    )
-    return {"message": "User removed from project"}
-
-@data_router.post("/data/update_user_role_project")
-async def update_user_role_project(request: ProjectUserUpdateRequest, current_user: dict = Depends(verify_token)):
-    if not is_admin_user(current_user):
-        raise HTTPException(status_code=403, detail="Unauthorized")
-    db.execute_query(
-        "UPDATE IDSL_users SET role = %s, group_id = %s WHERE user_id = %s AND project_id = %s",
-        (request.role, request.group_id, request.user_id, request.project_id)
-    )
-    return {"message": "User role updated in project"}
