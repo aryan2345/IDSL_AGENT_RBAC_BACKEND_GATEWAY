@@ -9,33 +9,71 @@ db = PostgresSQL()
 
 @login_router.post("/login")
 async def login(user: UserLogin):
-    # Step 1: Validate credentials
-    user_data = db.fetch_one("SELECT * FROM users WHERE username = %s", (user.username,))
+    try:
+        # Step 1: Fetch user by username
+        user_data = db.fetch_one(
+            "SELECT user_id, username, password_hash, flag FROM users WHERE username = %s",
+            (user.username,)
+        )
 
-    if not user_data or user_data['password_hash'] != hash_password(user.password):
-        db_user = db.fetch_one("SELECT user_id FROM users WHERE username = %s", (user.username,))
-        if db_user:
-            log_audit(db_user["user_id"], "/login", 401, "Invalid credentials")
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid credentials")
+        # Step 2: Validate credentials
+        if not user_data or user_data["password_hash"] != hash_password(user.password):
+            user_id_for_log = user_data["user_id"] if user_data else None
+            if not user_id_for_log:
+                found = db.fetch_one("SELECT user_id FROM users WHERE username = %s", (user.username,))
+                user_id_for_log = found["user_id"] if found else None
 
-    user_id = user_data["user_id"]
+            if user_id_for_log:
+                log_audit(user_id_for_log, "/login", 401, "Invalid credentials")
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid credentials")
 
-    # Step 2: Generate token (encode only sub and username)
-    access_token, expire = create_access_token(data={"sub": user_id, "username": user.username})
+        user_id = user_data["user_id"]
 
-    # Step 3: Store session
-    session_id = str(uuid.uuid4())
-    db.execute_query(
-        "INSERT INTO user_sessions (session_id, user_id, token, expiry_timestamp) VALUES (%s, %s, %s, %s)",
-        (session_id, user_id, access_token, expire)
-    )
+        # Step 3: Determine role
+        role = "system_admin" if user.username == "admin" else None
+        if role is None:
+            role_row = db.fetch_one("SELECT role FROM IDSL_users WHERE user_id = %s", (user_id,))
+            if not role_row:
+                raise HTTPException(status_code=404, detail="User role not found")
+            role = role_row["role"]
 
-    # Step 4: Log audit
-    log_audit(user_id, "/login", 200, "Login successful")
+        # Step 4: Generate token regardless of flag
+        access_token, expiry = create_access_token(data={
+            "sub": user_id,
+            "username": user.username,
+            "role": role
+        })
 
-    return {
-        "access_token": access_token,
-        "token_type": "bearer",
-        "user_id": user_id,
-        "username": user.username
-    }
+        # Step 5: Store session
+        session_id = str(uuid.uuid4())
+        db.execute_query(
+            "INSERT INTO user_sessions (session_id, user_id, token, expiry_timestamp) VALUES (%s, %s, %s, %s)",
+            (session_id, user_id, access_token, expiry)
+        )
+
+        # Step 6: If first-time login
+        if user_data["flag"] == 0:
+            log_audit(user_id, "/login", 200, "First-time login - password reset required")
+            return {
+                "message": "Go to /data/change_password to reset your password",
+                "access_token": access_token,
+                "token_type": "bearer",
+                "user_id": user_id,
+                "username": user.username,
+                "role": role
+            }
+
+        # Step 7: Normal login return
+        log_audit(user_id, "/login", 200, "Login successful")
+        return {
+            "access_token": access_token,
+            "token_type": "bearer",
+            "user_id": user_id,
+            "username": user.username,
+            "role": role
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail="Login failed: " + str(e))

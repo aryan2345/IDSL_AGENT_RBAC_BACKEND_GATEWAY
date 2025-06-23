@@ -23,7 +23,7 @@ bearer_scheme = HTTPBearer()
 def hash_password(password: str) -> str:
     return hashlib.sha256(password.encode()).hexdigest()
 
-# 🔑 Token Creation (no role inside)
+# 🔑 Token Creation (includes role in payload)
 def create_access_token(data: dict, expires_delta: Optional[datetime.timedelta] = None):
     to_encode = data.copy()
     expire = datetime.datetime.now() + (
@@ -64,19 +64,20 @@ def verify_token(credentials: HTTPAuthorizationCredentials = Depends(bearer_sche
     try:
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
         user_id: str = payload.get("sub")
+        username: str = payload.get("username")
+        role: str = payload.get("role")
 
-        if not user_id:
+        if not user_id or not username or not role:
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token payload")
 
-        # Fetch username from DB
-        user = db.fetch_one("SELECT username FROM users WHERE user_id = %s", (user_id,))
-        if not user:
-            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User not found")
+        # Override with system_admin for hardcoded admin user
+        final_role = "system_admin" if username == "admin" else role
 
-        username = user["username"]
-        role = "system_admin" if username == "admin" else "user"
-
-        return {"user_id": user_id, "username": username, "role": role}
+        return {
+            "user_id": user_id,
+            "username": username,
+            "role": final_role
+        }
 
     except Exception as e:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=f"Invalid token - {e}")

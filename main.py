@@ -35,24 +35,48 @@ def startup():
 
     # PostgreSQL setup
     db = PostgresSQL()
-    with open('./database/create_tables.sql', 'r') as sql:
-        db.execute_query(sql.read())
 
+    # Run create_tables.sql statements one by one
+    with open('./database/create_tables.sql', 'r') as sql_file:
+        sql_script = sql_file.read()
+        for statement in sql_script.split(';'):
+            stmt = statement.strip()
+            if stmt:
+                db.execute_query(stmt + ';')
+
+    # Insert hardcoded projects with UUIDs if they don't exist
+    project_names = ["IDSL", "Medrax"]
+    for name in project_names:
+        exists = db.fetch_one("SELECT 1 FROM project WHERE project_name = %s", (name,))
+        if not exists:
+            project_id = str(uuid.uuid4())
+            db.execute_query(
+                "INSERT INTO project (project_id, project_name) VALUES (%s, %s)",
+                (project_id, name)
+            )
+            logging.info(f"Project '{name}' created with ID {project_id}.")
+
+    # Insert default admin user if no users exist
     result = db.fetch_one("SELECT COUNT(*) FROM users")
     if result["count"] == 0:
         user_id = str(uuid.uuid4())
         hashed_password = hash_password("admin")
+
+        # Get the IDSL project ID for admin
+        project = db.fetch_one("SELECT project_id FROM project WHERE project_name = %s", ("IDSL",))
+        project_id = project["project_id"]
+
         db.execute_query(
-            "INSERT INTO users (user_id, username, password_hash) VALUES (%s, %s, %s)",
-            (user_id, "admin", hashed_password)
+            "INSERT INTO users (user_id, username, password_hash, project_id) VALUES (%s, %s, %s, %s)",
+            (user_id, "admin", hashed_password, project_id)
         )
-        logging.info("Admin user created as the first system user.")
+        logging.info("Admin user created with default 'IDSL' project.")
 
 @app.get("/health")
 def health():
     return {"status": "Service is running!"}
 
-# 🆕 Swagger UI Bearer token support
+# Swagger UI Bearer token support
 def custom_openapi():
     if app.openapi_schema:
         return app.openapi_schema

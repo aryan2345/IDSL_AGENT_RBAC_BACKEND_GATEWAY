@@ -32,8 +32,10 @@ class AddGroupRequest(BaseModel):
 class AddUserRequest(BaseModel):
     username: str
     password: str
-    group_name: str  # Changed from group_id to group_name
+    group_name: str
     is_admin: bool
+    project_name: str
+
 
 class UpdateUserRoleRequest(BaseModel):
     user_id: str
@@ -62,3 +64,7 @@ class ProjectUserUpdateRequest(BaseModel):
     project_id: int
     group_id: str
     role: str
+class ChangePasswordRequest(BaseModel):
+    username: str
+    old_password: str
+    new_password: str
