@@ -68,3 +68,14 @@ class ChangePasswordRequest(BaseModel):
     username: str
     old_password: str
     new_password: str
+
+class AddMedraxUserRequest(BaseModel):
+    username: str
+    password: str
+
+class AddIDSLUserRequest(BaseModel):
+    username: str
+    password: str
+    group_name: str
+    is_admin: bool
+

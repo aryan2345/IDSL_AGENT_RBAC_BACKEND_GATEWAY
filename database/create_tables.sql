@@ -63,3 +63,12 @@ CREATE TABLE IF NOT EXISTS IDSL_users (
     FOREIGN KEY (project_id) REFERENCES project(project_id) ON DELETE CASCADE,
     FOREIGN KEY (group_id) REFERENCES groups(group_id) ON DELETE CASCADE
 );
+
+-- 9. Create `MEDRAX_users` table
+CREATE TABLE IF NOT EXISTS MEDRAX_users (
+    user_id VARCHAR NOT NULL,
+    project_id VARCHAR NOT NULL,
+    FOREIGN KEY (user_id) REFERENCES users(user_id) ON DELETE CASCADE,
+    FOREIGN KEY (project_id) REFERENCES project(project_id) ON DELETE CASCADE
+
+)

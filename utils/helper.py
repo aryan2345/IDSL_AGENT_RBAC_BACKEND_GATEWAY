@@ -1,4 +1,6 @@
 import os
+import uuid
+
 import jwt
 import datetime
 import hashlib
@@ -81,3 +83,18 @@ def verify_token(credentials: HTTPAuthorizationCredentials = Depends(bearer_sche
 
     except Exception as e:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=f"Invalid token - {e}")
+
+def create_user_base(username, password, project_id):
+    user_id = str(uuid.uuid4())
+    password_hash_val = hash_password(password)
+
+    existing_user = db.fetch_one("SELECT user_id FROM users WHERE username = %s", (username,))
+    if existing_user:
+        raise HTTPException(status_code=400, detail="Username already exists")
+
+    db.execute_query(
+        "INSERT INTO users (user_id, username, password_hash, project_id) VALUES (%s, %s, %s, %s)",
+        (user_id, username, password_hash_val, project_id)
+    )
+
+    return user_id

@@ -59,8 +59,7 @@ async def login(user: UserLogin):
                 "access_token": access_token,
                 "token_type": "bearer",
                 "user_id": user_id,
-                "username": user.username,
-                "role": role
+                "username": user.username
             }
 
         # Step 7: Normal login return
@@ -69,8 +68,7 @@ async def login(user: UserLogin):
             "access_token": access_token,
             "token_type": "bearer",
             "user_id": user_id,
-            "username": user.username,
-            "role": role
+            "username": user.username
         }
 
     except HTTPException:

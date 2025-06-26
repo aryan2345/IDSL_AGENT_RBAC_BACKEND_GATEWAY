@@ -1,12 +1,12 @@
 import uuid
 from typing import List
 from fastapi import APIRouter, HTTPException, status, Depends, Request
-from utils.helper import verify_token, db, hash_password, log_audit
+from utils.helper import verify_token, db, hash_password, log_audit, create_user_base
 from schema.models import (
     User, Group, AddGroupRequest, AddUserRequest,
     UpdateUserRoleRequest, DeleteUserRequest, DeleteGroupRequest,
     DeleteProjectRequest, ProjectRequest,
-    ProjectUserRequest, ProjectUserUpdateRequest,ChangePasswordRequest
+    ProjectUserRequest, ProjectUserUpdateRequest,ChangePasswordRequest,AddMedraxUserRequest, AddIDSLUserRequest
 )
 
 data_router = APIRouter()
@@ -19,7 +19,6 @@ async def change_password(
     current_user: dict = Depends(verify_token)
 ):
     try:
-        # Ensure user is changing their own password
         if current_user["username"] != request.username:
             log_audit(current_user["user_id"], "/data/change_password", 403, "Cannot change another user's password")
             raise HTTPException(status_code=403, detail="You can only change your own password")
@@ -61,6 +60,7 @@ async def get_users(request: Request, current_user: dict = Depends(verify_token)
         FROM users u
         LEFT JOIN user_groups ug ON u.user_id = ug.user_id
         LEFT JOIN groups g ON ug.group_id = g.group_id
+        
         LEFT JOIN IDSL_users iu ON u.user_id = iu.user_id
         """
         result = db.fetch_all(query)
@@ -113,51 +113,87 @@ async def add_group(request: AddGroupRequest, current_user: dict = Depends(verif
         log_audit(current_user["user_id"], "/data/add_group", 500, f"Error: {str(e)}")
         raise HTTPException(status_code=500, detail="Error adding group")
 
-@data_router.post("/data/add_user", status_code=201)
-async def add_user(request: AddUserRequest, current_user: dict = Depends(verify_token)):
+@data_router.post("/data/add_user_idsl", status_code=201)
+async def add_user_idsl(
+    request: AddIDSLUserRequest,
+    current_user: dict = Depends(verify_token)
+):
     if not is_admin_user(current_user):
-        log_audit(current_user["user_id"], "/data/add_user", 403, "Forbidden access")
+        log_audit(current_user["user_id"], "/data/add_user_idsl", 403, "Forbidden access")
         raise HTTPException(status_code=403, detail="Insufficient permissions")
 
-    user_id = str(uuid.uuid4())
-    password_hash_val = hash_password(request.password)
-
     try:
+        # Get group ID
         group_record = db.fetch_one("SELECT group_id FROM groups WHERE group_name = %s", (request.group_name,))
         if not group_record:
             raise HTTPException(status_code=400, detail="Invalid group name")
         group_id = group_record["group_id"]
 
-        project_record = db.fetch_one("SELECT project_id FROM project WHERE project_name = %s", (request.project_name,))
+        # Get the project ID for 'idsl'
+        project_record = db.fetch_one("SELECT project_id FROM project WHERE project_name = %s", ("idsl",))
         if not project_record:
-            raise HTTPException(status_code=400, detail="Invalid project name")
+            raise HTTPException(status_code=500, detail="IDSL project not found in the database")
         project_id = project_record["project_id"]
 
-        existing_user = db.fetch_one("SELECT user_id FROM users WHERE username = %s", (request.username,))
-        if existing_user:
-            raise HTTPException(status_code=400, detail="Username already exists")
+        # Create user
+        user_id = create_user_base(request.username, request.password, project_id)
 
-        db.execute_query(
-            "INSERT INTO users (user_id, username, password_hash, project_id) VALUES (%s, %s, %s, %s)",
-            (user_id, request.username, password_hash_val, project_id)
-        )
-
+        # Add user to user_groups
         db.execute_query(
             "INSERT INTO user_groups (user_id, group_id, is_admin) VALUES (%s, %s, %s)",
             (user_id, group_id, request.is_admin)
         )
 
+        # Add to IDSL_users
         db.execute_query(
             "INSERT INTO IDSL_users (user_id, project_id, group_id, role) VALUES (%s, %s, %s, %s)",
             (user_id, project_id, group_id, 'group_admin' if request.is_admin else 'user')
         )
 
-        log_audit(current_user["user_id"], "/data/add_user", 201, f"User '{request.username}' added")
-        return {"message": "User added successfully", "user_id": user_id}
+        log_audit(current_user["user_id"], "/data/add_user_idsl", 201, f"IDSL user '{request.username}' added")
+        return {"message": "IDSL user added successfully", "user_id": user_id}
 
     except Exception as e:
-        log_audit(current_user["user_id"], "/data/add_user", 500, f"Error: {str(e)}")
+        log_audit(current_user["user_id"], "/data/add_user_idsl", 500, f"Error: {str(e)}")
         raise HTTPException(status_code=500, detail="Database error: " + str(e))
+
+
+@data_router.post("/data/add_user_medrax", status_code=201)
+async def add_user_medrax(
+    request: AddMedraxUserRequest,
+    current_user: dict = Depends(verify_token)
+):
+    if not is_admin_user(current_user):
+        log_audit(current_user["user_id"], "/data/add_user_medrax", 403, "Forbidden access")
+        raise HTTPException(status_code=403, detail="Insufficient permissions")
+
+    try:
+        # Get the project_id for Medrax project
+        project_record = db.fetch_one(
+            "SELECT project_id FROM project WHERE LOWER(project_name) = LOWER(%s)",
+            ("medrax",)
+        )
+
+        if not project_record:
+            raise HTTPException(status_code=500, detail="Medrax project not found in the database")
+        project_id = project_record["project_id"]
+
+        # Create user
+        user_id = create_user_base(request.username, request.password, project_id)
+
+        # Add to MEDRAX_users table
+        db.execute_query(
+            "INSERT INTO MEDRAX_users (user_id, project_id) VALUES (%s, %s)",
+            (user_id, project_id)
+        )
+
+        log_audit(current_user["user_id"], "/data/add_user_medrax", 201, f"MEDRAX user '{request.username}' added")
+        return {"message": "MEDRAX user added successfully", "user_id": user_id}
+
+    except Exception as e:
+        log_audit(current_user["user_id"], "/data/add_user_medrax", 500, f"Error: {str(e)}")
+        raise HTTPException(status_code=500, detail="Database error: " + str(e))
+
 
 @data_router.post("/data/update_user", status_code=201)
 async def update_user_role(request: UpdateUserRoleRequest, current_user: dict = Depends(verify_token)):
