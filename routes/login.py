@@ -12,7 +12,7 @@ async def login(user: UserLogin):
     try:
         # Step 1: Fetch user by username
         user_data = db.fetch_one(
-            "SELECT user_id, username, password_hash, flag FROM users WHERE username = %s",
+            "SELECT user_id, username, password_hash, requires_password_reset FROM users WHERE username = %s",
             (user.username,)
         )
 
@@ -37,7 +37,7 @@ async def login(user: UserLogin):
                 raise HTTPException(status_code=404, detail="User role not found")
             role = role_row["role"]
 
-        # Step 4: Generate token regardless of flag
+        # Step 4: Generate access token
         access_token, expiry = create_access_token(data={
             "sub": user_id,
             "username": user.username,
@@ -51,8 +51,8 @@ async def login(user: UserLogin):
             (session_id, user_id, access_token, expiry)
         )
 
-        # Step 6: If first-time login
-        if user_data["flag"] == 0:
+        # Step 6: First-time login check (only for group_admin and user)
+        if role in ["group_admin", "user"] and user_data["requires_password_reset"] == 1:
             log_audit(user_id, "/login", 200, "First-time login - password reset required")
             return {
                 "message": "Go to /data/change_password to reset your password",
@@ -62,7 +62,7 @@ async def login(user: UserLogin):
                 "username": user.username
             }
 
-        # Step 7: Normal login return
+        # Step 7: Normal login response
         log_audit(user_id, "/login", 200, "Login successful")
         return {
             "access_token": access_token,

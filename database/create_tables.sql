@@ -16,7 +16,7 @@ CREATE TABLE IF NOT EXISTS users (
     username VARCHAR UNIQUE NOT NULL,
     password_hash VARCHAR NOT NULL,
     project_id VARCHAR NOT NULL REFERENCES project(project_id) ON DELETE CASCADE,
-    flag INTEGER DEFAULT 0
+    requires_password_reset INTEGER DEFAULT 0
 );
 
 -- 4. Create `user_groups` table (depends on users and groups)
@@ -56,19 +56,14 @@ CREATE TABLE IF NOT EXISTS audit (
 -- 8. Create `IDSL_users` table (depends on users, project, groups)
 CREATE TABLE IF NOT EXISTS IDSL_users (
     user_id VARCHAR NOT NULL,
-    project_id VARCHAR NOT NULL,
     group_id VARCHAR NOT NULL,
     role VARCHAR NOT NULL CHECK (role IN ('group_admin', 'user')),
     FOREIGN KEY (user_id) REFERENCES users(user_id) ON DELETE CASCADE,
-    FOREIGN KEY (project_id) REFERENCES project(project_id) ON DELETE CASCADE,
     FOREIGN KEY (group_id) REFERENCES groups(group_id) ON DELETE CASCADE
 );
 
 -- 9. Create `MEDRAX_users` table
 CREATE TABLE IF NOT EXISTS MEDRAX_users (
     user_id VARCHAR NOT NULL,
-    project_id VARCHAR NOT NULL,
-    FOREIGN KEY (user_id) REFERENCES users(user_id) ON DELETE CASCADE,
-    FOREIGN KEY (project_id) REFERENCES project(project_id) ON DELETE CASCADE
-
+    FOREIGN KEY (user_id) REFERENCES users(user_id) ON DELETE CASCADE
 )
