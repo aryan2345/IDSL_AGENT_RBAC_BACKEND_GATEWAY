@@ -2,6 +2,7 @@ import logging
 import os
 import uuid
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 from pymongo import MongoClient
 from routes.login import login_router
 from routes.data import data_router
@@ -15,6 +16,15 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(level
 
 # FastAPI app setup
 app = FastAPI()
+
+# CORS middleware for frontend (React) integration
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:5173"],  # React frontend
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 # Include route modules
 app.include_router(login_router)
