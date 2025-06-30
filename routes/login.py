@@ -7,6 +7,7 @@ from utils.helper import hash_password, create_access_token, log_audit
 login_router = APIRouter(tags=["login"])
 db = PostgresSQL()
 
+
 @login_router.post("/login")
 async def login(user: UserLogin):
     try:
@@ -30,7 +31,11 @@ async def login(user: UserLogin):
         user_id = user_data["user_id"]
 
         # Step 3: Determine role
-        role = "system_admin" if user.username == "admin" else None
+        if user.username.strip().lower() == "admin":
+            role = "system_admin"
+        else:
+            role = None
+        print(role)
         if role is None:
             role_row = db.fetch_one("SELECT role FROM IDSL_users WHERE user_id = %s", (user_id,))
             if not role_row:
@@ -43,6 +48,7 @@ async def login(user: UserLogin):
             "username": user.username,
             "role": role
         })
+        print(f"[INFO] Token generated for user '{user_data['username']}' with role '{role}'. Token: {access_token}")
 
         # Step 5: Store session
         session_id = str(uuid.uuid4())
@@ -59,7 +65,8 @@ async def login(user: UserLogin):
                 "access_token": access_token,
                 "token_type": "bearer",
                 "user_id": user_id,
-                "username": user.username
+                "username": user.username,
+                "role": role
             }
 
         # Step 7: Normal login response
@@ -68,7 +75,8 @@ async def login(user: UserLogin):
             "access_token": access_token,
             "token_type": "bearer",
             "user_id": user_id,
-            "username": user.username
+            "username": user.username,
+            "role": role
         }
 
     except HTTPException:

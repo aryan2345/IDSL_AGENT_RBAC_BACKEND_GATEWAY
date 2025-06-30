@@ -12,7 +12,10 @@ from utils.helper import hash_password
 from fastapi.openapi.utils import get_openapi
 
 # Logging configuration
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
 
 # FastAPI app setup
 app = FastAPI()
@@ -20,11 +23,12 @@ app = FastAPI()
 # CORS middleware for frontend (React) integration
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173"],  # React frontend
-    allow_credentials=True,
+    allow_origins=["*"],
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
 
 # Include route modules
 app.include_router(login_router)
