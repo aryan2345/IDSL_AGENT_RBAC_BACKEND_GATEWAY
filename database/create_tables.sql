@@ -7,8 +7,9 @@ CREATE TABLE IF NOT EXISTS project (
 -- 2. Create `groups` table (needed for foreign keys in user_groups and IDSL_users)
 CREATE TABLE IF NOT EXISTS groups (
     group_id VARCHAR PRIMARY KEY,
-    group_name VARCHAR NOT NULL
+    group_name VARCHAR UNIQUE NOT NULL
 );
+
 
 -- 3. Create `users` table (depends on project)
 CREATE TABLE IF NOT EXISTS users (

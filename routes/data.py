@@ -109,9 +109,14 @@ async def add_group(request: AddGroupRequest, current_user: dict = Depends(verif
         )
         log_audit(current_user["user_id"], "/data/add_group", 201, f"Group '{request.group_name}' added")
         return {"message": "Group added successfully", "group_id": group_id}
+
     except Exception as e:
+        if "duplicate key value violates unique constraint" in str(e):
+            log_audit(current_user["user_id"], "/data/add_group", 400, f"Group '{request.group_name}' already exists")
+            raise HTTPException(status_code=400, detail="Group already exists")
         log_audit(current_user["user_id"], "/data/add_group", 500, f"Error: {str(e)}")
         raise HTTPException(status_code=500, detail="Error adding group")
+
 
 @data_router.post("/data/add_user_idsl", status_code=201)
 async def add_user_idsl(request: AddIDSLUserRequest, current_user: dict = Depends(verify_token)):
