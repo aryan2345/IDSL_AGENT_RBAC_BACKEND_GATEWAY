@@ -231,3 +231,46 @@ async def get_projects(current_user: dict = Depends(verify_token)):
         log_audit(current_user["user_id"], "/data/get_projects", 500, f"Error: {str(e)}")
         raise HTTPException(status_code=500, detail="Error fetching projects")
 
+
+@data_router.post("/data/delete_user", status_code=status.HTTP_201_CREATED)
+async def delete_user(request: DeleteUserRequest, current_user: dict = Depends(verify_token)):
+    if not is_admin_user(current_user):
+        raise HTTPException(status_code=403, detail="Insufficient permissions")
+
+    user = db.fetch_one("SELECT * FROM users WHERE user_id = %s", (request.user_id,))
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    try:
+        # Only delete from users table; all related records will be deleted automatically
+        db.execute_query("DELETE FROM users WHERE user_id = %s", (request.user_id,))
+
+        log_audit(current_user["user_id"], "/data/delete_user", 201, f"Deleted user {request.user_id}")
+        return {"message": "User deleted successfully", "user_id": request.user_id}
+
+    except Exception as e:
+        log_audit(current_user["user_id"], "/data/delete_user", 500, f"Error deleting user: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to delete user")
+
+@data_router.post("/data/delete_group", status_code=status.HTTP_201_CREATED)
+async def delete_group(request: DeleteGroupRequest, current_user: dict = Depends(verify_token)):
+    if not is_admin_user(current_user):
+        raise HTTPException(status_code=403, detail="Insufficient permissions")
+
+    # Check if the group exists
+    group = db.fetch_one("SELECT * FROM groups WHERE group_id = %s", (request.group_id,))
+    if not group:
+        raise HTTPException(status_code=404, detail="Group not found")
+
+    try:
+        # Only delete from groups table; ON DELETE CASCADE takes care of child tables
+        db.execute_query("DELETE FROM groups WHERE group_id = %s", (request.group_id,))
+
+        log_audit(current_user["user_id"], "/data/delete_group", 201, f"Deleted group {request.group_id}")
+        return {"message": "Group deleted successfully", "group_id": request.group_id}
+
+    except Exception as e:
+        log_audit(current_user["user_id"], "/data/delete_group", 500, f"Error deleting group: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to delete group")
+
+
