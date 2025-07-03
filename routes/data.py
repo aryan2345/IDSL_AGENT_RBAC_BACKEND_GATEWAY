@@ -47,10 +47,10 @@ async def change_password(
         log_audit(current_user["user_id"], "/data/change_password", 500, f"Error: {str(e)}")
         raise HTTPException(status_code=500, detail="Failed to change password")
 
-@data_router.get("/data/get_users")
-async def get_users(request: Request, current_user: dict = Depends(verify_token)):
+@data_router.get("/data/get_users_idsl")
+async def get_users_idsl(current_user: dict = Depends(verify_token)):
     if not is_admin_user(current_user):
-        log_audit(current_user["user_id"], "/data/get_users", 403, "Forbidden access")
+        log_audit(current_user["user_id"], "/data/get_users_idsl", 403, "Forbidden access")
         raise HTTPException(status_code=403, detail="Insufficient permissions")
 
     try:
@@ -59,16 +59,38 @@ async def get_users(request: Request, current_user: dict = Depends(verify_token)
                COALESCE(g.group_name, '') AS group_name,
                iu.role
         FROM users u
+        INNER JOIN IDSL_users iu ON u.user_id = iu.user_id
         LEFT JOIN user_groups ug ON u.user_id = ug.user_id
         LEFT JOIN groups g ON ug.group_id = g.group_id
-        LEFT JOIN IDSL_users iu ON u.user_id = iu.user_id
         """
         result = db.fetch_all(query)
-        log_audit(current_user["user_id"], "/data/get_users", 200, "Fetched all users")
+        log_audit(current_user["user_id"], "/data/get_users_idsl", 200, "Fetched IDSL users")
         return result
     except Exception as e:
-        log_audit(current_user["user_id"], "/data/get_users", 500, f"Error: {str(e)}")
-        raise HTTPException(status_code=500, detail="Error fetching users")
+        log_audit(current_user["user_id"], "/data/get_users_idsl", 500, f"Error: {str(e)}")
+        raise HTTPException(status_code=500, detail="Error fetching IDSL users")
+
+
+@data_router.get("/data/get_users_medrax")
+async def get_users_medrax(current_user: dict = Depends(verify_token)):
+    if not is_admin_user(current_user):
+        log_audit(current_user["user_id"], "/data/get_users_medrax", 403, "Forbidden access")
+        raise HTTPException(status_code=403, detail="Insufficient permissions")
+
+    try:
+        query = """
+        SELECT u.user_id, u.username, u.project_id
+        FROM users u
+        INNER JOIN MEDRAX_users mu ON u.user_id = mu.user_id
+        """
+        result = db.fetch_all(query)
+        log_audit(current_user["user_id"], "/data/get_users_medrax", 200, "Fetched MEDRAX users")
+        return result
+    except Exception as e:
+        log_audit(current_user["user_id"], "/data/get_users_medrax", 500, f"Error: {str(e)}")
+        raise HTTPException(status_code=500, detail="Error fetching MEDRAX users")
+
+
 
 @data_router.get("/data/get_groups")
 async def get_groups(current_user: dict = Depends(verify_token)):
