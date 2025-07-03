@@ -21,7 +21,14 @@ class PostgresSQL:
     def fetch_one(self, query, params=None):
         try:
             self.cursor.execute(query, params)
-            return self.cursor.fetchone()
+            result = self.cursor.fetchone()
+            return result  # Will be None if no rows are returned — that's expected behavior
+        except psycopg2.ProgrammingError as e:
+            # This handles cases where fetchone() is called but no query was executed
+            if not self.conn.autocommit:
+                self.conn.rollback()
+            print(f"[ProgrammingError] {e}")
+            return None
         except Exception as e:
             if not self.conn.autocommit:
                 self.conn.rollback()
