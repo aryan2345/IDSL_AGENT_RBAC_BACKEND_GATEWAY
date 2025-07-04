@@ -3,10 +3,7 @@ from typing import List
 from fastapi import APIRouter, HTTPException, status, Depends, Request
 from utils.helper import verify_token, db, hash_password, log_audit, create_user_base
 from schema.models import (
-    User, Group, AddGroupRequest, AddUserRequest,
-    UpdateUserRoleRequest, DeleteUserRequest, DeleteGroupRequest,
-    DeleteProjectRequest, ProjectRequest,
-    ProjectUserRequest, ProjectUserUpdateRequest, ChangePasswordRequest,
+    AddGroupRequest, UpdateUserRoleRequest, DeleteUserRequest, DeleteGroupRequest, ChangePasswordRequest,
     AddMedraxUserRequest, AddIDSLUserRequest
 )
 
