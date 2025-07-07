@@ -58,7 +58,7 @@ async def login(user: UserLogin):
         )
 
         # Step 6: First-time login check (only for group_admin and user)
-        if role in ["group_admin", "user"] and user_data["requires_password_reset"] == 1:
+        if role in ["group_admin", "user"] and user_data["requires_password_reset"] == 0:
             log_audit(user_id, "/login", 200, "First-time login - password reset required")
             return {
                 "message": "Go to /data/change_password to reset your password",
