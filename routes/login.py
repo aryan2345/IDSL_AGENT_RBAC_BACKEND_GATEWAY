@@ -66,7 +66,8 @@ async def login(user: UserLogin):
                 "token_type": "bearer",
                 "user_id": user_id,
                 "username": user.username,
-                "role": role
+                "role": role,
+                "requires_password_reset": user_data["requires_password_reset"]
             }
 
         # Step 7: Normal login response
@@ -76,7 +77,8 @@ async def login(user: UserLogin):
             "token_type": "bearer",
             "user_id": user_id,
             "username": user.username,
-            "role": role
+            "role": role,
+            "requires_password_reset": user_data["requires_password_reset"]
         }
 
     except HTTPException:
