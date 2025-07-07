@@ -3,7 +3,7 @@ from typing import List
 from fastapi import APIRouter, HTTPException, status, Depends, Request
 from utils.helper import verify_token, db, hash_password, log_audit, create_user_base
 from schema.models import (
-    AddGroupRequest, DeleteUserRequest, DeleteGroupRequest, ChangePasswordRequest,
+    AddGroupRequest, DeleteUserRequest, DeleteGroupRequest, ResetPasswordRequest,
     AddMedraxUserRequest, AddIDSLUserRequest, UpdateGroupRequest, UpdateUserGroupRequest
 )
 import secrets
@@ -17,28 +17,33 @@ def is_admin_user(current_user: dict):
 
 @data_router.post("/data/change_password")
 async def change_password(
-    request: ChangePasswordRequest,
+    request: ResetPasswordRequest,
     current_user: dict = Depends(verify_token)
 ):
     try:
-        if current_user["username"] != request.username:
-            log_audit(current_user["user_id"], "/data/change_password", 403, "Cannot change another user's password")
-            raise HTTPException(status_code=403, detail="You can only change your own password")
+        # Step 1: Check passwords match
+        if request.new_password != request.confirm_new_password:
+            log_audit(current_user["user_id"], "/data/change_password", 400, "Passwords do not match")
+            raise HTTPException(status_code=400, detail="Passwords do not match")
 
-        user_data = db.fetch_one("SELECT user_id, password_hash, requires_password_reset FROM users WHERE username = %s", (request.username,))
+        # Step 2: Fetch user from DB
+        user_data = db.fetch_one(
+            "SELECT user_id FROM users WHERE username = %s",
+            (current_user["username"],)
+        )
+
         if not user_data:
             raise HTTPException(status_code=404, detail="User not found")
 
-        if user_data["password_hash"] != hash_password(request.old_password):
-            raise HTTPException(status_code=401, detail="Incorrect old password")
-
+        # Step 3: Hash new password and update
         new_hash = hash_password(request.new_password)
+
         db.execute_query(
-            "UPDATE users SET password_hash = %s, requires_password_reset = 0 WHERE username = %s",
-            (new_hash, request.username)
+            "UPDATE users SET password_hash = %s, requires_password_reset = 1 WHERE username = %s",
+            (new_hash, current_user["username"])
         )
 
-        log_audit(user_data["user_id"], "/data/change_password", 200, "Password changed successfully")
+        log_audit(user_data["user_id"], "/data/change_password", 200, "Password set by user")
         return {"message": "Password updated successfully"}
 
     except HTTPException:
@@ -46,6 +51,8 @@ async def change_password(
     except Exception as e:
         log_audit(current_user["user_id"], "/data/change_password", 500, f"Error: {str(e)}")
         raise HTTPException(status_code=500, detail="Failed to change password")
+
+
 
 @data_router.get("/data/get_users_idsl")
 async def get_users_idsl(current_user: dict = Depends(verify_token)):
@@ -156,12 +163,15 @@ async def add_user_idsl(request: AddIDSLUserRequest, current_user: dict = Depend
             "SELECT project_id FROM project WHERE LOWER(project_name) = LOWER(%s)",
             ("idsl",)
         )
-
         if not project_record:
             raise HTTPException(status_code=500, detail="IDSL project not found in the database")
         project_id = project_record["project_id"]
 
-        user_id = create_user_base(request.username, request.password, project_id)
+        # ✅ Generate a secure password
+        alphabet = string.ascii_letters + string.digits + string.punctuation
+        generated_password = ''.join(secrets.choice(alphabet) for _ in range(12))
+
+        user_id = create_user_base(request.username, generated_password, project_id)
 
         db.execute_query(
             "INSERT INTO user_groups (user_id, group_id, is_admin) VALUES (%s, %s, %s)",
@@ -174,11 +184,16 @@ async def add_user_idsl(request: AddIDSLUserRequest, current_user: dict = Depend
         )
 
         log_audit(current_user["user_id"], "/data/add_user_idsl", 201, f"IDSL user '{request.username}' added")
-        return {"message": "IDSL user added successfully", "user_id": user_id}
+        return {
+            "message": "IDSL user added successfully",
+            "user_id": user_id,
+            "generated_password": generated_password  # ✅ so admin can share
+        }
 
     except Exception as e:
         log_audit(current_user["user_id"], "/data/add_user_idsl", 500, f"Error: {str(e)}")
         raise HTTPException(status_code=500, detail="Database error: " + str(e))
+
 
 @data_router.post("/data/add_user_medrax", status_code=201)
 async def add_user_medrax(request: AddMedraxUserRequest, current_user: dict = Depends(verify_token)):
@@ -195,7 +210,12 @@ async def add_user_medrax(request: AddMedraxUserRequest, current_user: dict = De
             raise HTTPException(status_code=500, detail="Medrax project not found in the database")
 
         project_id = project_record["project_id"]
-        user_id = create_user_base(request.username, request.password, project_id)
+
+        # ✅ Generate a secure password
+        alphabet = string.ascii_letters + string.digits + string.punctuation
+        generated_password = ''.join(secrets.choice(alphabet) for _ in range(12))
+
+        user_id = create_user_base(request.username, generated_password, project_id)
 
         db.execute_query(
             "INSERT INTO MEDRAX_users (user_id) VALUES (%s)",
@@ -203,11 +223,16 @@ async def add_user_medrax(request: AddMedraxUserRequest, current_user: dict = De
         )
 
         log_audit(current_user["user_id"], "/data/add_user_medrax", 201, f"MEDRAX user '{request.username}' added")
-        return {"message": "MEDRAX user added successfully", "user_id": user_id}
+        return {
+            "message": "MEDRAX user added successfully",
+            "user_id": user_id,
+            "generated_password": generated_password  # ✅ return it so admin can share
+        }
 
     except Exception as e:
         log_audit(current_user["user_id"], "/data/add_user_medrax", 500, f"Error: {str(e)}")
         raise HTTPException(status_code=500, detail="Database error: " + str(e))
+
 
 @data_router.post("/data/update_user_group", status_code=200)
 async def update_user_group(request: UpdateUserGroupRequest, current_user: dict = Depends(verify_token)):
@@ -377,7 +402,7 @@ async def generate_password_for_user(
 
         # Update the password in the database
         db.execute_query(
-            "UPDATE users SET password_hash = %s, requires_password_reset = 1 WHERE username = %s",
+            "UPDATE users SET password_hash = %s, requires_password_reset = 0 WHERE username = %s",
             (hashed, request.username)
         )
 

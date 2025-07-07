@@ -30,18 +30,16 @@ class DeleteUserRequest(BaseModel):
 class DeleteGroupRequest(BaseModel):
     group_id: str
 
-class ChangePasswordRequest(BaseModel):
-    username: str
-    old_password: str
+class ResetPasswordRequest(BaseModel):
     new_password: str
+    confirm_new_password: str
+
 
 class AddMedraxUserRequest(BaseModel):
     username: str
-    password: str
 
 class AddIDSLUserRequest(BaseModel):
     username: str
-    password: str
     group_name: str
     is_admin: bool
 
