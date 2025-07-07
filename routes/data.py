@@ -3,9 +3,12 @@ from typing import List
 from fastapi import APIRouter, HTTPException, status, Depends, Request
 from utils.helper import verify_token, db, hash_password, log_audit, create_user_base
 from schema.models import (
-    AddGroupRequest, UpdateUserRoleRequest, DeleteUserRequest, DeleteGroupRequest, ChangePasswordRequest,
-    AddMedraxUserRequest, AddIDSLUserRequest
+    AddGroupRequest, DeleteUserRequest, DeleteGroupRequest, ChangePasswordRequest,
+    AddMedraxUserRequest, AddIDSLUserRequest, UpdateGroupRequest, UpdateUserGroupRequest
 )
+import secrets
+import string
+from schema.models import GeneratePasswordRequest
 
 data_router = APIRouter()
 
@@ -206,27 +209,46 @@ async def add_user_medrax(request: AddMedraxUserRequest, current_user: dict = De
         log_audit(current_user["user_id"], "/data/add_user_medrax", 500, f"Error: {str(e)}")
         raise HTTPException(status_code=500, detail="Database error: " + str(e))
 
-@data_router.post("/data/update_user", status_code=201)
-async def update_user_role(request: UpdateUserRoleRequest, current_user: dict = Depends(verify_token)):
+@data_router.post("/data/update_user_group", status_code=200)
+async def update_user_group(request: UpdateUserGroupRequest, current_user: dict = Depends(verify_token)):
     if not is_admin_user(current_user):
-        log_audit(current_user["user_id"], "/data/update_user", 403, "Forbidden access")
+        log_audit(current_user["user_id"], "/data/update_user_group", 403, "Forbidden access")
         raise HTTPException(status_code=403, detail="Insufficient permissions")
 
     try:
-        if request.role not in ["group_admin", "user"]:
-            raise HTTPException(status_code=400, detail="Invalid role")
+        # 1. Verify user exists
+        user = db.fetch_one("SELECT user_id FROM users WHERE user_id = %s", (request.user_id,))
+        if not user:
+            raise HTTPException(status_code=404, detail="User not found")
 
+        # 2. Get new group_id
+        group = db.fetch_one("SELECT group_id FROM groups WHERE group_name = %s", (request.new_group_name,))
+        if not group:
+            raise HTTPException(status_code=400, detail="Group not found")
+
+        new_group_id = group["group_id"]
+
+        # 3. Update user_groups table
         db.execute_query(
-            "UPDATE IDSL_users SET role = %s WHERE user_id = %s",
-            (request.role, request.user_id)
+            "UPDATE user_groups SET group_id = %s WHERE user_id = %s",
+            (new_group_id, request.user_id)
         )
-        log_audit(current_user["user_id"], "/data/update_user", 201, f"Updated role for user {request.user_id}")
-        return {"message": "User role updated", "user_id": request.user_id}
+
+        # 4. Update IDSL_users table
+        db.execute_query(
+            "UPDATE IDSL_users SET group_id = %s WHERE user_id = %s",
+            (new_group_id, request.user_id)
+        )
+
+        log_audit(current_user["user_id"], "/data/update_user_group", 200,
+                  f"Updated group for user {request.user_id} to {request.new_group_name}")
+        return {"message": "User group updated successfully", "user_id": request.user_id}
+
     except HTTPException:
         raise
     except Exception as e:
-        log_audit(current_user["user_id"], "/data/update_user", 500, f"Error: {str(e)}")
-        raise HTTPException(status_code=500, detail="Failed to update user role")
+        log_audit(current_user["user_id"], "/data/update_user_group", 500, f"Error: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to update user group")
 
 @data_router.get("/data/get_projects")
 async def get_projects(current_user: dict = Depends(verify_token)):
@@ -298,3 +320,73 @@ async def delete_group(request: DeleteGroupRequest, current_user: dict = Depends
         raise HTTPException(status_code=500, detail="Failed to delete group")
 
 
+@data_router.post("/data/update_group", status_code=200)
+async def update_group(request: UpdateGroupRequest, current_user: dict = Depends(verify_token)):
+    if not is_admin_user(current_user):
+        log_audit(current_user["user_id"], "/data/update_group", 403, "Forbidden access")
+        raise HTTPException(status_code=403, detail="Insufficient permissions")
+
+    try:
+        # Check if group exists
+        group = db.fetch_one("SELECT group_id FROM groups WHERE group_name = %s", (request.current_group_name,))
+        if not group:
+            raise HTTPException(status_code=404, detail="Group not found")
+
+        # Check if the new name already exists
+        existing = db.fetch_one("SELECT group_id FROM groups WHERE group_name = %s", (request.new_group_name,))
+        if existing:
+            raise HTTPException(status_code=400, detail="New group name already exists")
+
+        db.execute_query(
+            "UPDATE groups SET group_name = %s WHERE group_name = %s",
+            (request.new_group_name, request.current_group_name)
+        )
+
+        log_audit(current_user["user_id"], "/data/update_group", 200,
+                  f"Group renamed from {request.current_group_name} to {request.new_group_name}")
+        return {"message": "Group name updated successfully"}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        log_audit(current_user["user_id"], "/data/update_group", 500, f"Error: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to update group name")
+
+
+@data_router.post("/data/generate_password", status_code=200)
+async def generate_password_for_user(
+    request: GeneratePasswordRequest,
+    current_user: dict = Depends(verify_token)
+):
+    if not is_admin_user(current_user):
+        log_audit(current_user["user_id"], "/data/generate_password", 403, "Forbidden access")
+        raise HTTPException(status_code=403, detail="Insufficient permissions")
+
+    try:
+        # Fetch user to ensure they exist
+        user = db.fetch_one("SELECT user_id FROM users WHERE username = %s", (request.username,))
+        if not user:
+            raise HTTPException(status_code=404, detail="User not found")
+
+        # Generate a secure random password
+        alphabet = string.ascii_letters + string.digits + string.punctuation
+        new_password = ''.join(secrets.choice(alphabet) for _ in range(request.length))
+
+        # Hash it
+        hashed = hash_password(new_password)
+
+        # Update the password in the database
+        db.execute_query(
+            "UPDATE users SET password_hash = %s, requires_password_reset = 1 WHERE username = %s",
+            (hashed, request.username)
+        )
+
+        log_audit(current_user["user_id"], "/data/generate_password", 200, f"Generated new password for {request.username}")
+        return {
+            "username": request.username,
+            "generated_password": new_password
+        }
+
+    except Exception as e:
+        log_audit(current_user["user_id"], "/data/generate_password", 500, f"Error: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to generate password")

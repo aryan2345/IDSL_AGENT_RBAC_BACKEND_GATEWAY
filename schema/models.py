@@ -2,6 +2,7 @@ from typing import List, Dict
 
 from pydantic import BaseModel
 
+
 class UserLogin(BaseModel):
     username: str
     password: str
@@ -18,12 +19,10 @@ class UpdateChatRequest(BaseModel):
 class AddGroupRequest(BaseModel):
     group_name: str
 
-
-
-
-class UpdateUserRoleRequest(BaseModel):
+class UpdateUserGroupRequest(BaseModel):
     user_id: str
-    role: str
+    new_group_name: str
+
 
 class DeleteUserRequest(BaseModel):
     user_id: str
@@ -46,3 +45,10 @@ class AddIDSLUserRequest(BaseModel):
     group_name: str
     is_admin: bool
 
+class UpdateGroupRequest(BaseModel):
+    current_group_name: str
+    new_group_name: str
+
+class GeneratePasswordRequest(BaseModel):
+    username: str
+    length: int = 12
