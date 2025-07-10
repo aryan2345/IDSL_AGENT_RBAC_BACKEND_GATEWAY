@@ -19,9 +19,11 @@ class UpdateChatRequest(BaseModel):
 class AddGroupRequest(BaseModel):
     group_name: str
 
+
 class UpdateUserGroupRequest(BaseModel):
     user_id: str
     new_group_name: str
+    new_role: str
 
 
 class DeleteUserRequest(BaseModel):

@@ -250,7 +250,6 @@ async def update_user_group(request: UpdateUserGroupRequest, current_user: dict 
         group = db.fetch_one("SELECT group_id FROM groups WHERE group_name = %s", (request.new_group_name,))
         if not group:
             raise HTTPException(status_code=400, detail="Group not found")
-
         new_group_id = group["group_id"]
 
         # 3. Update user_groups table
@@ -259,21 +258,27 @@ async def update_user_group(request: UpdateUserGroupRequest, current_user: dict 
             (new_group_id, request.user_id)
         )
 
-        # 4. Update IDSL_users table
+        # 4. Update IDSL_users table: set both group_id and role
         db.execute_query(
-            "UPDATE IDSL_users SET group_id = %s WHERE user_id = %s",
-            (new_group_id, request.user_id)
+            "UPDATE IDSL_users SET group_id = %s, role = %s WHERE user_id = %s",
+            (new_group_id, request.new_role, request.user_id)
         )
 
         log_audit(current_user["user_id"], "/data/update_user_group", 200,
-                  f"Updated group for user {request.user_id} to {request.new_group_name}")
-        return {"message": "User group updated successfully", "user_id": request.user_id}
+                  f"Updated group and role for user {request.user_id} to {request.new_group_name}, {request.new_role}")
+        return {
+            "message": "User group and role updated successfully",
+            "user_id": request.user_id,
+            "new_group": request.new_group_name,
+            "new_role": request.new_role
+        }
 
     except HTTPException:
         raise
     except Exception as e:
         log_audit(current_user["user_id"], "/data/update_user_group", 500, f"Error: {str(e)}")
-        raise HTTPException(status_code=500, detail="Failed to update user group")
+        raise HTTPException(status_code=500, detail="Failed to update user group and role")
+
 
 @data_router.get("/data/get_projects")
 async def get_projects(current_user: dict = Depends(verify_token)):
