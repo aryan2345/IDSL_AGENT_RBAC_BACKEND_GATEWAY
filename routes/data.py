@@ -168,7 +168,7 @@ async def add_user_idsl(request: AddIDSLUserRequest, current_user: dict = Depend
         project_id = project_record["project_id"]
 
         # ✅ Generate a secure password
-        alphabet = string.ascii_letters + string.digits + string.punctuation
+        alphabet = string.ascii_letters + string.digits
         generated_password = ''.join(secrets.choice(alphabet) for _ in range(12))
 
         user_id = create_user_base(request.username, generated_password, project_id)
@@ -212,7 +212,7 @@ async def add_user_medrax(request: AddMedraxUserRequest, current_user: dict = De
         project_id = project_record["project_id"]
 
         # ✅ Generate a secure password
-        alphabet = string.ascii_letters + string.digits + string.punctuation
+        alphabet = string.ascii_letters + string.digits
         generated_password = ''.join(secrets.choice(alphabet) for _ in range(12))
 
         user_id = create_user_base(request.username, generated_password, project_id)
@@ -399,7 +399,7 @@ async def generate_password_for_user(
             raise HTTPException(status_code=404, detail="User not found")
 
         # Generate a secure random password
-        alphabet = string.ascii_letters + string.digits + string.punctuation
+        alphabet = string.ascii_letters + string.digits
         new_password = ''.join(secrets.choice(alphabet) for _ in range(request.length))
 
         # Hash it
