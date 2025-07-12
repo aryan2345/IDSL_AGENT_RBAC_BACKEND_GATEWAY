@@ -269,7 +269,7 @@ async def update_user_group(request: UpdateUserGroupRequest, current_user: dict 
         return {
             "message": "User group and role updated successfully",
             "user_id": request.user_id,
-            "new_group": request.new_group_name,
+            "new_group_name": request.new_group_name,
             "new_role": request.new_role
         }
 
