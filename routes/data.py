@@ -98,7 +98,6 @@ async def get_users_medrax(current_user: dict = Depends(verify_token)):
         raise HTTPException(status_code=500, detail="Error fetching MEDRAX users")
 
 
-
 @data_router.get("/data/get_groups")
 async def get_groups(current_user: dict = Depends(verify_token)):
     if not is_admin_user(current_user):
@@ -109,8 +108,9 @@ async def get_groups(current_user: dict = Depends(verify_token)):
         query = """
         SELECT g.group_id, g.group_name,
                (SELECT u.username FROM users u
+                JOIN IDSL_users iu ON u.user_id = iu.user_id
                 JOIN user_groups ug ON u.user_id = ug.user_id
-                WHERE ug.group_id = g.group_id AND ug.is_admin = TRUE LIMIT 1) AS admin_username,
+                WHERE ug.group_id = g.group_id AND iu.role = 'group_admin' LIMIT 1) AS admin_username,
                STRING_AGG(u.username, ', ') AS users
         FROM groups g
         LEFT JOIN user_groups ug ON g.group_id = ug.group_id
@@ -123,6 +123,7 @@ async def get_groups(current_user: dict = Depends(verify_token)):
     except Exception as e:
         log_audit(current_user["user_id"], "/data/get_groups", 500, f"Error: {str(e)}")
         raise HTTPException(status_code=500, detail="Error fetching groups")
+
 
 @data_router.post("/data/add_group", status_code=201)
 async def add_group(request: AddGroupRequest, current_user: dict = Depends(verify_token)):
