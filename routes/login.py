@@ -2,7 +2,12 @@ import uuid
 from fastapi import APIRouter, HTTPException, status
 from schema.models import UserLogin
 from database.postgres import PostgresSQL
-from utils.helper import hash_password, create_access_token, log_audit
+from utils.helper import (
+    hash_password,
+    create_access_token,
+    create_medrax_token,
+    log_audit
+)
 
 login_router = APIRouter(tags=["login"])
 db = PostgresSQL()
@@ -11,9 +16,16 @@ db = PostgresSQL()
 @login_router.post("/login")
 async def login(user: UserLogin):
     try:
-        # Step 1: Fetch user by username
+        # Step 1: Fetch user data and project name via JOIN
         user_data = db.fetch_one(
-            "SELECT user_id, username, password_hash, requires_password_reset FROM users WHERE username = %s",
+            """
+            SELECT 
+                u.user_id, u.username, u.password_hash, 
+                u.requires_password_reset, p.project_name
+            FROM users u
+            JOIN project p ON u.project_id = p.project_id
+            WHERE u.username = %s
+            """,
             (user.username,)
         )
 
@@ -29,26 +41,29 @@ async def login(user: UserLogin):
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid credentials")
 
         user_id = user_data["user_id"]
+        project_name = user_data["project_name"].strip().lower()
 
-        # Step 3: Determine role
+        # Step 3: Determine role (if admin or IDSL)
+        role = None
         if user.username.strip().lower() == "admin":
             role = "system_admin"
-        else:
-            role = None
-        print(role)
-        if role is None:
+        elif project_name == "idsl":
             role_row = db.fetch_one("SELECT role FROM IDSL_users WHERE user_id = %s", (user_id,))
             if not role_row:
                 raise HTTPException(status_code=404, detail="User role not found")
             role = role_row["role"]
 
-        # Step 4: Generate access token
-        access_token, expiry = create_access_token(data={
-            "sub": user_id,
-            "username": user.username,
-            "role": role
-        })
-        print(f"[INFO] Token generated for user '{user_data['username']}' with role '{role}'. Token: {access_token}")
+        # Step 4: Generate access token (with or without role)
+        if project_name == "medrax":
+            access_token, expiry = create_medrax_token(user_id, user.username)
+            print(f"[INFO] Token generated for MEDRAX user '{user.username}'.")
+        else:
+            access_token, expiry = create_access_token(data={
+                "sub": user_id,
+                "username": user.username,
+                "role": role
+            })
+            print(f"[INFO] Token generated for user '{user.username}' with role '{role}'.")
 
         # Step 5: Store session
         session_id = str(uuid.uuid4())
@@ -57,29 +72,33 @@ async def login(user: UserLogin):
             (session_id, user_id, access_token, expiry)
         )
 
-        # Step 6: First-time login check (only for group_admin and user)
-        if role in ["group_admin", "user"] and user_data["requires_password_reset"] == 0:
+        # Step 6: Handle password reset prompt for ALL users
+        if user_data["requires_password_reset"] == 0:
             log_audit(user_id, "/login", 200, "First-time login - password reset required")
-            return {
+            response = {
                 "message": "Go to /data/change_password to reset your password",
                 "access_token": access_token,
                 "token_type": "bearer",
                 "user_id": user_id,
                 "username": user.username,
-                "role": role,
                 "requires_password_reset": user_data["requires_password_reset"]
             }
+            if role:
+                response["role"] = role
+            return response
 
         # Step 7: Normal login response
         log_audit(user_id, "/login", 200, "Login successful")
-        return {
+        response = {
             "access_token": access_token,
             "token_type": "bearer",
             "user_id": user_id,
             "username": user.username,
-            "role": role,
             "requires_password_reset": user_data["requires_password_reset"]
         }
+        if role:
+            response["role"] = role
+        return response
 
     except HTTPException:
         raise

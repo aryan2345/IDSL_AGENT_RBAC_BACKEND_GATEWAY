@@ -67,13 +67,13 @@ def verify_token(credentials: HTTPAuthorizationCredentials = Depends(bearer_sche
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
         user_id: str = payload.get("sub")
         username: str = payload.get("username")
-        role: str = payload.get("role")
+        role: str = payload.get("role", None)  # role might be missing in MEDRAX tokens
 
-        if not user_id or not username or not role:
+        if not user_id or not username:
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token payload")
 
-        # Override with system_admin for hardcoded admin user
-        final_role = "system_admin" if username == "admin" else role
+        # Fallback for MEDRAX: inject default role
+        final_role = "system_admin" if username == "admin" else (role or "medrax_user")
 
         return {
             "user_id": user_id,
@@ -83,6 +83,7 @@ def verify_token(credentials: HTTPAuthorizationCredentials = Depends(bearer_sche
 
     except Exception as e:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=f"Invalid token - {e}")
+
 
 def create_user_base(username, password, project_id):
     user_id = str(uuid.uuid4())
@@ -98,3 +99,21 @@ def create_user_base(username, password, project_id):
     )
 
     return user_id
+
+
+def create_medrax_token(user_id: str, username: str, expires_delta: Optional[datetime.timedelta] = None):
+    """Generates JWT access token for MEDRAX users without including a 'role' claim."""
+    to_encode = {
+        "sub": user_id,
+        "username": username
+    }
+
+    expire = datetime.datetime.now() + (
+        expires_delta or datetime.timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+    )
+    to_encode.update({"exp": expire})
+
+    encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
+    return encoded_jwt, expire
+
+
