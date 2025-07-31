@@ -111,7 +111,6 @@ async def startup():
         logging.error(f"❌ Startup error: {str(e)}")
 
 
-
 @app.get("/health")
 def health():
     return {"status": "Service is running!"}
