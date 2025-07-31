@@ -86,6 +86,18 @@ def verify_token(credentials: HTTPAuthorizationCredentials = Depends(bearer_sche
 
 
 def create_user_base(username, password, project_id):
+    # ❌ Step 0: Check if username exists for this project already
+    existing = db.fetch_one("""
+        SELECT u.user_id 
+        FROM users u
+        JOIN user_projects up ON u.user_id = up.user_id
+        WHERE u.username = %s AND up.project_id = %s
+    """, (username, project_id))
+
+    if existing:
+        raise HTTPException(status_code=400, detail="Username already exists for this project")
+
+    # ✅ Step 1: Check if global user with this username exists
     user = db.fetch_one("SELECT user_id FROM users WHERE username = %s", (username,))
 
     if user:
@@ -93,25 +105,19 @@ def create_user_base(username, password, project_id):
     else:
         user_id = str(uuid.uuid4())
         password_hash_val = hash_password(password)
-
-        # Step 1: Insert into users table
         db.execute_query(
             "INSERT INTO users (user_id, username, password_hash) VALUES (%s, %s, %s)",
             (user_id, username, password_hash_val)
         )
 
-    # Step 2: Insert into user_projects only if not already linked
-    existing_link = db.fetch_one(
-        "SELECT 1 FROM user_projects WHERE user_id = %s AND project_id = %s",
+    # ✅ Step 2: Link to project
+    db.execute_query(
+        "INSERT INTO user_projects (user_id, project_id) VALUES (%s, %s)",
         (user_id, project_id)
     )
-    if not existing_link:
-        db.execute_query(
-            "INSERT INTO user_projects (user_id, project_id) VALUES (%s, %s)",
-            (user_id, project_id)
-        )
 
     return user_id
+
 
 
 def create_medrax_token(user_id: str, username: str, expires_delta: Optional[datetime.timedelta] = None):

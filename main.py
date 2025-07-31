@@ -14,7 +14,7 @@ from fastapi.openapi.utils import get_openapi
 
 
 
-db = PostgresSQL()
+
 
 # Logging configuration
 logging.basicConfig(
@@ -24,6 +24,7 @@ logging.basicConfig(
 
 # FastAPI app setup
 app = FastAPI()
+db = PostgresSQL()
 
 # CORS middleware for frontend (React) integration
 app.add_middleware(
@@ -45,9 +46,24 @@ app.include_router(login_router)
 app.include_router(data_router)
 app.include_router(chat_router)
 
+
+
+
 @app.on_event("startup")
 async def startup():
     try:
+        if os.path.exists("./database/create_tables.sql"):
+            with open('./database/create_tables.sql', 'r') as sql:
+                ddl = sql.read()
+                for stmt in ddl.split(";"):
+                    stmt = stmt.strip()
+                    if stmt:
+                        db.execute_query(stmt)
+            logging.info("✅ Tables created (if not existing).")
+        else:
+            logging.error("❌ create_tables.sql not found at ./database/create_tables.sql")
+
+
         # ✅ Step 1: Get or create IDSL project
         project = db.fetch_one("SELECT project_id FROM project WHERE LOWER(project_name) = 'idsl'")
         if not project:
