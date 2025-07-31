@@ -9,7 +9,7 @@ from schema.models import (
 import secrets
 import string
 from schema.models import GeneratePasswordRequest
-
+from fastapi import Query
 data_router = APIRouter()
 
 def is_admin_user(current_user: dict):
@@ -429,3 +429,39 @@ async def generate_password_for_user(
     except Exception as e:
         log_audit(current_user["user_id"], "/data/generate_password", 500, f"Error: {str(e)}")
         raise HTTPException(status_code=500, detail="Failed to generate password")
+
+
+
+
+
+@data_router.get("/data/get_all_user_projects")
+async def get_all_user_projects(current_user: dict = Depends(verify_token)):
+    if not is_admin_user(current_user):
+        log_audit(current_user["user_id"], "/data/get_all_user_projects", 403, "Forbidden access")
+        raise HTTPException(status_code=403, detail="Insufficient permissions")
+
+    try:
+        # Fetch all users with their project names
+        query = """
+        SELECT u.username, p.project_name
+        FROM users u
+        JOIN user_projects up ON u.user_id = up.user_id
+        JOIN project p ON up.project_id = p.project_id
+        """
+        records = db.fetch_all(query)
+
+        # Group projects by username
+        user_projects = {}
+        for row in records:
+            username = row["username"]
+            project = row["project_name"]
+            user_projects.setdefault(username, []).append(project)
+
+        result = [{"username": k, "projects": v} for k, v in user_projects.items()]
+        log_audit(current_user["user_id"], "/data/get_all_user_projects", 200, "Fetched all user projects")
+        return result
+
+    except Exception as e:
+        log_audit(current_user["user_id"], "/data/get_all_user_projects", 500, f"Error: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to fetch user projects")
+
