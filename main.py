@@ -10,6 +10,7 @@ from routes.chat import chat_router
 from database.postgres import PostgresSQL
 from utils.helper import hash_password
 from fastapi.openapi.utils import get_openapi
+import pathlib
 
 
 
@@ -48,6 +49,18 @@ app.include_router(chat_router)
 @app.on_event("startup")
 async def startup():
     try:
+
+          # ✅ Step 0: Create tables if not exist
+        sql_file_path = pathlib.Path("database/create_tables.sql")  # relative to root of backend
+        with open(sql_file_path, "r") as file:
+            sql_statements = file.read()
+
+        # Split and execute each statement if your db.execute_query handles single statements only
+        for statement in sql_statements.strip().split(";"):
+            if statement.strip():
+                db.execute_query(statement.strip() + ";")
+        logging.info("✅ Tables created or already exist.")
+
         # ✅ Step 1: Get or create IDSL project
         project = db.fetch_one("SELECT project_id FROM project WHERE LOWER(project_name) = 'idsl'")
         if not project:
