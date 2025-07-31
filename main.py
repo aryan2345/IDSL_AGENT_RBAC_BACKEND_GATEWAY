@@ -11,6 +11,11 @@ from database.postgres import PostgresSQL
 from utils.helper import hash_password
 from fastapi.openapi.utils import get_openapi
 
+
+
+
+db = PostgresSQL()
+
 # Logging configuration
 logging.basicConfig(
     level=logging.INFO,
@@ -41,55 +46,52 @@ app.include_router(data_router)
 app.include_router(chat_router)
 
 @app.on_event("startup")
-def startup():
-    # MongoDB setup
-    client = MongoClient(os.getenv("MONGO_URL"))
-    db_mongo = client.get_database(name='mydb')
-    collection_name = "chats"
-
-    if collection_name not in db_mongo.list_collection_names():
-        db_mongo.create_collection(collection_name, check_exists=True)
-
-    logging.info(f"Connected to MongoDB database '{db_mongo.name}' and collection '{collection_name}'.")
-
-    # PostgreSQL setup
-    db = PostgresSQL()
-
-    # Run create_tables.sql statements one by one
-    with open('./database/create_tables.sql', 'r') as sql_file:
-        sql_script = sql_file.read()
-        for statement in sql_script.split(';'):
-            stmt = statement.strip()
-            if stmt:
-                db.execute_query(stmt + ';')
-
-    # Insert hardcoded projects with UUIDs if they don't exist
-    project_names = ["IDSL", "Medrax"]
-    for name in project_names:
-        exists = db.fetch_one("SELECT 1 FROM project WHERE project_name = %s", (name,))
-        if not exists:
-            project_id = str(uuid.uuid4())
+async def startup():
+    try:
+        # ✅ Step 1: Get or create IDSL project
+        project = db.fetch_one("SELECT project_id FROM project WHERE LOWER(project_name) = 'idsl'")
+        if not project:
+            idsl_project_id = str(uuid.uuid4())
             db.execute_query(
                 "INSERT INTO project (project_id, project_name) VALUES (%s, %s)",
-                (project_id, name)
+                (idsl_project_id, "IDSL")
             )
-            logging.info(f"Project '{name}' created with ID {project_id}.")
+            logging.info("✅ IDSL project created.")
+        else:
+            idsl_project_id = project["project_id"]
 
-    # Insert default admin user if no users exist
-    result = db.fetch_one("SELECT COUNT(*) FROM users")
-    if result["count"] == 0:
-        user_id = str(uuid.uuid4())
-        hashed_password = hash_password("admin")
+        # ✅ Step 2: Check if admin exists
+        result = db.fetch_one("SELECT user_id FROM users WHERE username = 'admin'")
+        if not result:
+            admin_user_id = str(uuid.uuid4())
+            hashed_password = hash_password("admin")
+            db.execute_query(
+                "INSERT INTO users (user_id, username, password_hash) VALUES (%s, %s, %s)",
+                (admin_user_id, "admin", hashed_password)
+            )
+            logging.info("✅ Admin user created.")
+        else:
+            admin_user_id = result["user_id"]
+            logging.info("ℹ️ Admin user already exists.")
 
-        # Get the IDSL project ID for admin
-        project = db.fetch_one("SELECT project_id FROM project WHERE project_name = %s", ("IDSL",))
-        project_id = project["project_id"]
-
-        db.execute_query(
-            "INSERT INTO users (user_id, username, password_hash, project_id) VALUES (%s, %s, %s, %s)",
-            (user_id, "admin", hashed_password, project_id)
+        # ✅ Step 3: Ensure admin is linked to IDSL project
+        existing_link = db.fetch_one(
+            "SELECT 1 FROM user_projects WHERE user_id = %s AND project_id = %s",
+            (admin_user_id, idsl_project_id)
         )
-        logging.info("Admin user created with default 'IDSL' project.")
+        if not existing_link:
+            db.execute_query(
+                "INSERT INTO user_projects (user_id, project_id) VALUES (%s, %s)",
+                (admin_user_id, idsl_project_id)
+            )
+            logging.info("✅ Linked admin to IDSL project.")
+        else:
+            logging.info("ℹ️ Admin already linked to IDSL.")
+
+    except Exception as e:
+        logging.error(f"❌ Startup error: {str(e)}")
+
+
 
 @app.get("/health")
 def health():

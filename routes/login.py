@@ -16,15 +16,18 @@ db = PostgresSQL()
 @login_router.post("/login")
 async def login(user: UserLogin):
     try:
-        # Step 1: Fetch user data and project name via JOIN
+        # Step 1: Fetch user and their first associated project
         user_data = db.fetch_one(
             """
             SELECT 
                 u.user_id, u.username, u.password_hash, 
                 u.requires_password_reset, p.project_name
             FROM users u
-            JOIN project p ON u.project_id = p.project_id
+            JOIN user_projects up ON u.user_id = up.user_id
+            JOIN project p ON up.project_id = p.project_id
             WHERE u.username = %s
+            ORDER BY p.project_name ASC
+            LIMIT 1
             """,
             (user.username,)
         )
@@ -43,7 +46,7 @@ async def login(user: UserLogin):
         user_id = user_data["user_id"]
         project_name = user_data["project_name"].strip().lower()
 
-        # Step 3: Determine role (if admin or IDSL)
+        # Step 3: Determine role if needed
         role = None
         if user.username.strip().lower() == "admin":
             role = "system_admin"
@@ -53,17 +56,15 @@ async def login(user: UserLogin):
                 raise HTTPException(status_code=404, detail="User role not found")
             role = role_row["role"]
 
-        # Step 4: Generate access token (with or without role)
+        # Step 4: Generate appropriate token
         if project_name == "medrax":
             access_token, expiry = create_medrax_token(user_id, user.username)
-            print(f"[INFO] Token generated for MEDRAX user '{user.username}'.")
         else:
             access_token, expiry = create_access_token(data={
                 "sub": user_id,
                 "username": user.username,
                 "role": role
             })
-            print(f"[INFO] Token generated for user '{user.username}' with role '{role}'.")
 
         # Step 5: Store session
         session_id = str(uuid.uuid4())
@@ -72,7 +73,7 @@ async def login(user: UserLogin):
             (session_id, user_id, access_token, expiry)
         )
 
-        # Step 6: Handle password reset prompt for ALL users
+        # Step 6: First-time login password reset
         if user_data["requires_password_reset"] == 0:
             log_audit(user_id, "/login", 200, "First-time login - password reset required")
             response = {
@@ -81,7 +82,8 @@ async def login(user: UserLogin):
                 "token_type": "bearer",
                 "user_id": user_id,
                 "username": user.username,
-                "requires_password_reset": user_data["requires_password_reset"]
+                "requires_password_reset": user_data["requires_password_reset"],
+                "project_name": project_name
             }
             if role:
                 response["role"] = role
@@ -94,7 +96,8 @@ async def login(user: UserLogin):
             "token_type": "bearer",
             "user_id": user_id,
             "username": user.username,
-            "requires_password_reset": user_data["requires_password_reset"]
+            "requires_password_reset": user_data["requires_password_reset"],
+            "project_name": project_name
         }
         if role:
             response["role"] = role

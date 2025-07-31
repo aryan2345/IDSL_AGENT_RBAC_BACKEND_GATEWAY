@@ -86,17 +86,30 @@ def verify_token(credentials: HTTPAuthorizationCredentials = Depends(bearer_sche
 
 
 def create_user_base(username, password, project_id):
-    user_id = str(uuid.uuid4())
-    password_hash_val = hash_password(password)
+    user = db.fetch_one("SELECT user_id FROM users WHERE username = %s", (username,))
 
-    existing_user = db.fetch_one("SELECT user_id FROM users WHERE username = %s", (username,))
-    if existing_user:
-        raise HTTPException(status_code=400, detail="Username already exists")
+    if user:
+        user_id = user["user_id"]
+    else:
+        user_id = str(uuid.uuid4())
+        password_hash_val = hash_password(password)
 
-    db.execute_query(
-        "INSERT INTO users (user_id, username, password_hash, project_id) VALUES (%s, %s, %s, %s)",
-        (user_id, username, password_hash_val, project_id)
+        # Step 1: Insert into users table
+        db.execute_query(
+            "INSERT INTO users (user_id, username, password_hash) VALUES (%s, %s, %s)",
+            (user_id, username, password_hash_val)
+        )
+
+    # Step 2: Insert into user_projects only if not already linked
+    existing_link = db.fetch_one(
+        "SELECT 1 FROM user_projects WHERE user_id = %s AND project_id = %s",
+        (user_id, project_id)
     )
+    if not existing_link:
+        db.execute_query(
+            "INSERT INTO user_projects (user_id, project_id) VALUES (%s, %s)",
+            (user_id, project_id)
+        )
 
     return user_id
 

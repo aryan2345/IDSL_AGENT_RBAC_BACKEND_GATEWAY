@@ -53,7 +53,6 @@ async def change_password(
         raise HTTPException(status_code=500, detail="Failed to change password")
 
 
-
 @data_router.get("/data/get_users_idsl")
 async def get_users_idsl(current_user: dict = Depends(verify_token)):
     if not is_admin_user(current_user):
@@ -62,13 +61,17 @@ async def get_users_idsl(current_user: dict = Depends(verify_token)):
 
     try:
         query = """
-        SELECT u.user_id, u.username, u.project_id,
-               COALESCE(g.group_name, '') AS group_name,
-               iu.role
+        SELECT 
+            u.user_id, u.username, p.project_name,
+            COALESCE(g.group_name, '') AS group_name,
+            iu.role
         FROM users u
+        INNER JOIN user_projects up ON u.user_id = up.user_id
+        INNER JOIN project p ON up.project_id = p.project_id
         INNER JOIN IDSL_users iu ON u.user_id = iu.user_id
         LEFT JOIN user_groups ug ON u.user_id = ug.user_id
         LEFT JOIN groups g ON ug.group_id = g.group_id
+        WHERE LOWER(p.project_name) = 'idsl'
         """
         result = db.fetch_all(query)
         log_audit(current_user["user_id"], "/data/get_users_idsl", 200, "Fetched IDSL users")
@@ -76,7 +79,6 @@ async def get_users_idsl(current_user: dict = Depends(verify_token)):
     except Exception as e:
         log_audit(current_user["user_id"], "/data/get_users_idsl", 500, f"Error: {str(e)}")
         raise HTTPException(status_code=500, detail="Error fetching IDSL users")
-
 
 @data_router.get("/data/get_users_medrax")
 async def get_users_medrax(current_user: dict = Depends(verify_token)):
@@ -86,9 +88,13 @@ async def get_users_medrax(current_user: dict = Depends(verify_token)):
 
     try:
         query = """
-        SELECT u.user_id, u.username, u.project_id
+        SELECT 
+            u.user_id, u.username, p.project_name
         FROM users u
+        INNER JOIN user_projects up ON u.user_id = up.user_id
+        INNER JOIN project p ON up.project_id = p.project_id
         INNER JOIN MEDRAX_users mu ON u.user_id = mu.user_id
+        WHERE LOWER(p.project_name) = 'medrax'
         """
         result = db.fetch_all(query)
         log_audit(current_user["user_id"], "/data/get_users_medrax", 200, "Fetched MEDRAX users")
@@ -96,6 +102,7 @@ async def get_users_medrax(current_user: dict = Depends(verify_token)):
     except Exception as e:
         log_audit(current_user["user_id"], "/data/get_users_medrax", 500, f"Error: {str(e)}")
         raise HTTPException(status_code=500, detail="Error fetching MEDRAX users")
+
 
 
 @data_router.get("/data/get_groups")
@@ -280,7 +287,6 @@ async def update_user_group(request: UpdateUserGroupRequest, current_user: dict 
         log_audit(current_user["user_id"], "/data/update_user_group", 500, f"Error: {str(e)}")
         raise HTTPException(status_code=500, detail="Failed to update user group and role")
 
-
 @data_router.get("/data/get_projects")
 async def get_projects(current_user: dict = Depends(verify_token)):
     if not is_admin_user(current_user):
@@ -296,7 +302,8 @@ async def get_projects(current_user: dict = Depends(verify_token)):
             COUNT(DISTINCT ug.group_id) AS total_groups,
             STRING_AGG(DISTINCT g.group_name, ', ') AS group_names
         FROM project p
-        LEFT JOIN users u ON p.project_id = u.project_id
+        LEFT JOIN user_projects up ON p.project_id = up.project_id
+        LEFT JOIN users u ON up.user_id = u.user_id
         LEFT JOIN user_groups ug ON u.user_id = ug.user_id
         LEFT JOIN groups g ON ug.group_id = g.group_id
         GROUP BY p.project_id
@@ -307,6 +314,7 @@ async def get_projects(current_user: dict = Depends(verify_token)):
     except Exception as e:
         log_audit(current_user["user_id"], "/data/get_projects", 500, f"Error: {str(e)}")
         raise HTTPException(status_code=500, detail="Error fetching projects")
+
 
 
 @data_router.post("/data/delete_user", status_code=status.HTTP_201_CREATED)
