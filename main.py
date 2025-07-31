@@ -10,11 +10,9 @@ from routes.chat import chat_router
 from database.postgres import PostgresSQL
 from utils.helper import hash_password
 from fastapi.openapi.utils import get_openapi
+import pathlib
 
-
-
-
-
+db = PostgresSQL()
 
 # Logging configuration
 logging.basicConfig(
@@ -24,7 +22,6 @@ logging.basicConfig(
 
 # FastAPI app setup
 app = FastAPI()
-db = PostgresSQL()
 
 # CORS middleware for frontend (React) integration
 app.add_middleware(
@@ -35,11 +32,10 @@ app.add_middleware(
         "http://host.docker.internal:5179",
         "http://host.docker.internal:5180"
     ],
-    allow_credentials= True,
+    allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
 
 # Include route modules
 app.include_router(login_router)
@@ -47,36 +43,23 @@ app.include_router(data_router)
 app.include_router(chat_router)
 
 
-
-
 @app.on_event("startup")
 async def startup():
     try:
-        if os.path.exists("./database/create_tables.sql"):
-            with open('./database/create_tables.sql', 'r') as sql:
-                ddl = sql.read()
-                for stmt in ddl.split(";"):
-                    stmt = stmt.strip()
-                    if stmt:
-                        db.execute_query(stmt)
-            logging.info("✅ Tables created (if not existing).")
+        # ✅ Step 0: Create tables from create_tables.sql
+        sql_file_path = pathlib.Path("database/create_tables.sql")
+        if sql_file_path.exists():
+            with open(sql_file_path, "r") as file:
+                sql_statements = file.read()
+
+            for statement in sql_statements.strip().split(";"):
+                if statement.strip():
+                    db.execute_query(statement.strip() + ";")
+            logging.info("✅ Tables created or already exist.")
         else:
             logging.error("❌ create_tables.sql not found at ./database/create_tables.sql")
 
-
-        # ✅ Step 1: Get or create IDSL project
-        project = db.fetch_one("SELECT project_id FROM project WHERE LOWER(project_name) = 'idsl'")
-        if not project:
-            idsl_project_id = str(uuid.uuid4())
-            db.execute_query(
-                "INSERT INTO project (project_id, project_name) VALUES (%s, %s)",
-                (idsl_project_id, "IDSL")
-            )
-            logging.info("✅ IDSL project created.")
-        else:
-            idsl_project_id = project["project_id"]
-
-        # ✅ Step 2: Check if admin exists
+        # ✅ Step 1: Ensure admin user exists
         result = db.fetch_one("SELECT user_id FROM users WHERE username = 'admin'")
         if not result:
             admin_user_id = str(uuid.uuid4())
@@ -90,19 +73,39 @@ async def startup():
             admin_user_id = result["user_id"]
             logging.info("ℹ️ Admin user already exists.")
 
-        # ✅ Step 3: Ensure admin is linked to IDSL project
-        existing_link = db.fetch_one(
-            "SELECT 1 FROM user_projects WHERE user_id = %s AND project_id = %s",
-            (admin_user_id, idsl_project_id)
-        )
-        if not existing_link:
-            db.execute_query(
-                "INSERT INTO user_projects (user_id, project_id) VALUES (%s, %s)",
-                (admin_user_id, idsl_project_id)
+        # ✅ Step 2: Create and link multiple hardcoded projects
+        project_names = ["IDSL", "MEDRAX"]
+
+        for project_name in project_names:
+            # Check if project exists
+            project = db.fetch_one(
+                "SELECT project_id FROM project WHERE LOWER(project_name) = %s",
+                (project_name.lower(),)
             )
-            logging.info("✅ Linked admin to IDSL project.")
-        else:
-            logging.info("ℹ️ Admin already linked to IDSL.")
+            if not project:
+                project_id = str(uuid.uuid4())
+                db.execute_query(
+                    "INSERT INTO project (project_id, project_name) VALUES (%s, %s)",
+                    (project_id, project_name)
+                )
+                logging.info(f"✅ {project_name} project created.")
+            else:
+                project_id = project["project_id"]
+                logging.info(f"ℹ️ {project_name} project already exists.")
+
+            # Link admin to the project
+            existing_link = db.fetch_one(
+                "SELECT 1 FROM user_projects WHERE user_id = %s AND project_id = %s",
+                (admin_user_id, project_id)
+            )
+            if not existing_link:
+                db.execute_query(
+                    "INSERT INTO user_projects (user_id, project_id) VALUES (%s, %s)",
+                    (admin_user_id, project_id)
+                )
+                logging.info(f"✅ Linked admin to {project_name} project.")
+            else:
+                logging.info(f"ℹ️ Admin already linked to {project_name}.")
 
     except Exception as e:
         logging.error(f"❌ Startup error: {str(e)}")
@@ -112,6 +115,7 @@ async def startup():
 @app.get("/health")
 def health():
     return {"status": "Service is running!"}
+
 
 # Swagger UI Bearer token support
 def custom_openapi():
@@ -135,5 +139,6 @@ def custom_openapi():
                 openapi_schema["paths"][path][method]["security"] = [{"HTTPBearer": []}]
     app.openapi_schema = openapi_schema
     return app.openapi_schema
+
 
 app.openapi = custom_openapi
