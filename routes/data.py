@@ -465,3 +465,37 @@ async def get_all_user_projects(current_user: dict = Depends(verify_token)):
         log_audit(current_user["user_id"], "/data/get_all_user_projects", 500, f"Error: {str(e)}")
         raise HTTPException(status_code=500, detail="Failed to fetch user projects")
 
+@data_router.get("/data/get_my_projects")
+async def get_my_projects(current_user: dict = Depends(verify_token)):
+    """
+    Get projects for the currently authenticated user
+    Returns only the projects that the current user belongs to
+    """
+    try:
+        user_id = current_user["user_id"]
+        username = current_user["username"]
+        
+        # Fetch projects for the current user only
+        query = """
+        SELECT p.project_name
+        FROM users u
+        JOIN user_projects up ON u.user_id = up.user_id
+        JOIN project p ON up.project_id = p.project_id
+        WHERE u.user_id = %s
+        """
+        records = db.fetch_all(query, (user_id,))
+        
+        # Extract project names
+        projects = [row["project_name"] for row in records]
+        
+        result = {
+            "username": username,
+            "projects": projects
+        }
+        
+        log_audit(user_id, "/data/get_my_projects", 200, f"Fetched projects for user {username}")
+        return result
+
+    except Exception as e:
+        log_audit(current_user["user_id"], "/data/get_my_projects", 500, f"Error: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to fetch user projects")
