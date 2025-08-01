@@ -316,26 +316,58 @@ async def get_projects(current_user: dict = Depends(verify_token)):
         raise HTTPException(status_code=500, detail="Error fetching projects")
 
 
+@data_router.post("/data/delete_user_idsl")
+async def delete_user_idsl(request: DeleteUserRequest, current_user: dict = Depends(verify_token)):
+    if current_user["username"] != "admin":
+        raise HTTPException(status_code=403, detail="Unauthorized")
 
-@data_router.post("/data/delete_user", status_code=status.HTTP_201_CREATED)
-async def delete_user(request: DeleteUserRequest, current_user: dict = Depends(verify_token)):
-    if not is_admin_user(current_user):
-        raise HTTPException(status_code=403, detail="Insufficient permissions")
-
-    user = db.fetch_one("SELECT * FROM users WHERE user_id = %s", (request.user_id,))
-    if not user:
-        raise HTTPException(status_code=404, detail="User not found")
+    user_id = request.user_id
 
     try:
-        # Only delete from users table; all related records will be deleted automatically
-        db.execute_query("DELETE FROM users WHERE user_id = %s", (request.user_id,))
+        # Delete from IDSL-specific table
+        db.execute_query("DELETE FROM idsl_users WHERE user_id = %s", (user_id,))
+        # Delete from project mapping
+        db.execute_query("DELETE FROM user_projects WHERE user_id = %s AND project_id = %s", (user_id, "idsl"))  # or pass project_id explicitly if needed
 
-        log_audit(current_user["user_id"], "/data/delete_user", 201, f"Deleted user {request.user_id}")
-        return {"message": "User deleted successfully", "user_id": request.user_id}
+        # Check if user still exists in any project
+        remaining = db.fetch_one("SELECT 1 FROM user_projects WHERE user_id = %s LIMIT 1", (user_id,))
+        if not remaining:
+            db.execute_query("DELETE FROM users WHERE user_id = %s", (user_id,))
+
+        log_audit(current_user["user_id"], "/data/delete_user_idsl", 200, f"Deleted IDSL user {user_id}")
+        return {"message": "IDSL user deleted successfully."}
 
     except Exception as e:
-        log_audit(current_user["user_id"], "/data/delete_user", 500, f"Error deleting user: {str(e)}")
-        raise HTTPException(status_code=500, detail="Failed to delete user")
+        log_audit(current_user["user_id"], "/data/delete_user_idsl", 500, str(e))
+        raise HTTPException(status_code=500, detail="Failed to delete IDSL user.")
+
+
+@data_router.post("/data/delete_user_medrax")
+async def delete_user_medrax(request: DeleteUserRequest, current_user: dict = Depends(verify_token)):
+    if current_user["username"] != "admin":
+        raise HTTPException(status_code=403, detail="Unauthorized")
+
+    user_id = request.user_id
+
+    try:
+        # Delete from MEDRAX-specific table
+        db.execute_query("DELETE FROM medrax_users WHERE user_id = %s", (user_id,))
+        # Delete from project mapping
+        db.execute_query("DELETE FROM user_projects WHERE user_id = %s AND project_id = %s", (user_id, "medrax"))  # or pass project_id explicitly
+
+        # Check if user is still mapped to any project
+        remaining = db.fetch_one("SELECT 1 FROM user_projects WHERE user_id = %s LIMIT 1", (user_id,))
+        if not remaining:
+            db.execute_query("DELETE FROM users WHERE user_id = %s", (user_id,))
+
+        log_audit(current_user["user_id"], "/data/delete_user_medrax", 200, f"Deleted MEDRAX user {user_id}")
+        return {"message": "MEDRAX user deleted successfully."}
+
+    except Exception as e:
+        log_audit(current_user["user_id"], "/data/delete_user_medrax", 500, str(e))
+        raise HTTPException(status_code=500, detail="Failed to delete MEDRAX user.")
+
+
 
 @data_router.post("/data/delete_group", status_code=status.HTTP_201_CREATED)
 async def delete_group(request: DeleteGroupRequest, current_user: dict = Depends(verify_token)):

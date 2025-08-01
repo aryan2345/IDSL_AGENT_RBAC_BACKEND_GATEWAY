@@ -25,9 +25,9 @@ class UpdateUserGroupRequest(BaseModel):
     new_group_name: str
     new_role: str
 
-
 class DeleteUserRequest(BaseModel):
     user_id: str
+
 
 class DeleteGroupRequest(BaseModel):
     group_id: str
