@@ -19,6 +19,11 @@ class UpdateChatRequest(BaseModel):
 class AddGroupRequest(BaseModel):
     group_name: str
 
+class ToggleAccessRequest(BaseModel):
+    user_id: str
+    project_name: str  # 'idsl' or 'medrax'
+    access: bool       # True = grant access (flag=0), False = revoke (flag=1)
+
 
 class UpdateUserGroupRequest(BaseModel):
     user_id: str

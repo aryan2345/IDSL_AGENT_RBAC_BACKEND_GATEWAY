@@ -12,6 +12,9 @@ from schema.models import GeneratePasswordRequest
 from fastapi import Query
 data_router = APIRouter()
 
+from schema.models import ToggleAccessRequest
+
+
 def is_admin_user(current_user: dict):
     return current_user.get("username") == "admin"
 
@@ -64,7 +67,8 @@ async def get_users_idsl(current_user: dict = Depends(verify_token)):
         SELECT 
             u.user_id, u.username, p.project_name,
             COALESCE(g.group_name, '') AS group_name,
-            iu.role
+            iu.role,
+            up.flag
         FROM users u
         INNER JOIN user_projects up ON u.user_id = up.user_id
         INNER JOIN project p ON up.project_id = p.project_id
@@ -73,6 +77,7 @@ async def get_users_idsl(current_user: dict = Depends(verify_token)):
         LEFT JOIN groups g ON ug.group_id = g.group_id
         WHERE LOWER(p.project_name) = 'idsl'
         """
+
         result = db.fetch_all(query)
         log_audit(current_user["user_id"], "/data/get_users_idsl", 200, "Fetched IDSL users")
         return result
@@ -315,60 +320,6 @@ async def get_projects(current_user: dict = Depends(verify_token)):
         log_audit(current_user["user_id"], "/data/get_projects", 500, f"Error: {str(e)}")
         raise HTTPException(status_code=500, detail="Error fetching projects")
 
-
-@data_router.post("/data/delete_user_idsl")
-async def delete_user_idsl(request: DeleteUserRequest, current_user: dict = Depends(verify_token)):
-    if current_user["username"] != "admin":
-        raise HTTPException(status_code=403, detail="Unauthorized")
-
-    user_id = request.user_id
-
-    try:
-        # Delete from IDSL-specific table
-        db.execute_query("DELETE FROM idsl_users WHERE user_id = %s", (user_id,))
-        # Delete from project mapping
-        db.execute_query("DELETE FROM user_projects WHERE user_id = %s AND project_id = %s", (user_id, "idsl"))  # or pass project_id explicitly if needed
-
-        # Check if user still exists in any project
-        remaining = db.fetch_one("SELECT 1 FROM user_projects WHERE user_id = %s LIMIT 1", (user_id,))
-        if not remaining:
-            db.execute_query("DELETE FROM users WHERE user_id = %s", (user_id,))
-
-        log_audit(current_user["user_id"], "/data/delete_user_idsl", 200, f"Deleted IDSL user {user_id}")
-        return {"message": "IDSL user deleted successfully."}
-
-    except Exception as e:
-        log_audit(current_user["user_id"], "/data/delete_user_idsl", 500, str(e))
-        raise HTTPException(status_code=500, detail="Failed to delete IDSL user.")
-
-
-@data_router.post("/data/delete_user_medrax")
-async def delete_user_medrax(request: DeleteUserRequest, current_user: dict = Depends(verify_token)):
-    if current_user["username"] != "admin":
-        raise HTTPException(status_code=403, detail="Unauthorized")
-
-    user_id = request.user_id
-
-    try:
-        # Delete from MEDRAX-specific table
-        db.execute_query("DELETE FROM medrax_users WHERE user_id = %s", (user_id,))
-        # Delete from project mapping
-        db.execute_query("DELETE FROM user_projects WHERE user_id = %s AND project_id = %s", (user_id, "medrax"))  # or pass project_id explicitly
-
-        # Check if user is still mapped to any project
-        remaining = db.fetch_one("SELECT 1 FROM user_projects WHERE user_id = %s LIMIT 1", (user_id,))
-        if not remaining:
-            db.execute_query("DELETE FROM users WHERE user_id = %s", (user_id,))
-
-        log_audit(current_user["user_id"], "/data/delete_user_medrax", 200, f"Deleted MEDRAX user {user_id}")
-        return {"message": "MEDRAX user deleted successfully."}
-
-    except Exception as e:
-        log_audit(current_user["user_id"], "/data/delete_user_medrax", 500, str(e))
-        raise HTTPException(status_code=500, detail="Failed to delete MEDRAX user.")
-
-
-
 @data_router.post("/data/delete_group", status_code=status.HTTP_201_CREATED)
 async def delete_group(request: DeleteGroupRequest, current_user: dict = Depends(verify_token)):
     if not is_admin_user(current_user):
@@ -480,6 +431,7 @@ async def get_all_user_projects(current_user: dict = Depends(verify_token)):
         JOIN user_projects up ON u.user_id = up.user_id
         JOIN project p ON up.project_id = p.project_id
         """
+
         records = db.fetch_all(query)
 
         # Group projects by username
@@ -531,3 +483,47 @@ async def get_my_projects(current_user: dict = Depends(verify_token)):
     except Exception as e:
         log_audit(current_user["user_id"], "/data/get_my_projects", 500, f"Error: {str(e)}")
         raise HTTPException(status_code=500, detail="Failed to fetch user projects")
+
+
+
+@data_router.post("/data/toggle_user_access")
+async def toggle_user_access(
+    request: ToggleAccessRequest,
+    current_user: dict = Depends(verify_token)
+):
+    if not is_admin_user(current_user):
+        log_audit(current_user["user_id"], "/data/toggle_user_access", 403, "Unauthorized access")
+        raise HTTPException(status_code=403, detail="Unauthorized")
+
+    try:
+        # Get project_id from project_name
+        project_record = db.fetch_one(
+            "SELECT project_id FROM project WHERE LOWER(project_name) = LOWER(%s)",
+            (request.project_name.lower(),)
+        )
+        if not project_record:
+            raise HTTPException(status_code=404, detail="Project not found")
+        project_id = project_record["project_id"]
+
+        # Check if mapping exists
+        existing = db.fetch_one(
+            "SELECT 1 FROM user_projects WHERE user_id = %s AND project_id = %s",
+            (request.user_id, project_id)
+        )
+        if not existing:
+            raise HTTPException(status_code=404, detail="User-project mapping not found")
+
+        # Toggle flag: 0 = access granted, 1 = revoked
+        flag_value = 0 if request.access else 1
+        db.execute_query(
+            "UPDATE user_projects SET flag = %s WHERE user_id = %s AND project_id = %s",
+            (flag_value, request.user_id, project_id)
+        )
+
+        msg = "Access granted" if request.access else "Access revoked"
+        log_audit(current_user["user_id"], "/data/toggle_user_access", 200, f"{msg} for user {request.user_id} in project {request.project_name}")
+        return {"message": msg}
+
+    except Exception as e:
+        log_audit(current_user["user_id"], "/data/toggle_user_access", 500, f"Error: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to toggle access")

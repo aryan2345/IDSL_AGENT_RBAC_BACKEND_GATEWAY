@@ -71,7 +71,9 @@ CREATE TABLE IF NOT EXISTS MEDRAX_users (
 CREATE TABLE IF NOT EXISTS user_projects (
     user_id VARCHAR NOT NULL,
     project_id VARCHAR NOT NULL,
+    flag INTEGER DEFAULT 0,  -- 0: active, 1: access revoked
     PRIMARY KEY (user_id, project_id),
     FOREIGN KEY (user_id) REFERENCES users(user_id) ON DELETE CASCADE,
     FOREIGN KEY (project_id) REFERENCES project(project_id) ON DELETE CASCADE
 );
+
