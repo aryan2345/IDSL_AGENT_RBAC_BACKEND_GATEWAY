@@ -75,7 +75,7 @@ async def get_users_idsl(current_user: dict = Depends(verify_token)):
         INNER JOIN IDSL_users iu ON u.user_id = iu.user_id
         LEFT JOIN user_groups ug ON u.user_id = ug.user_id
         LEFT JOIN groups g ON ug.group_id = g.group_id
-        WHERE LOWER(p.project_name) = 'idsl'
+        WHERE LOWER(p.project_name) = 'idsl' AND up.flag = 0
         """
 
         result = db.fetch_all(query)
@@ -99,7 +99,7 @@ async def get_users_medrax(current_user: dict = Depends(verify_token)):
         INNER JOIN user_projects up ON u.user_id = up.user_id
         INNER JOIN project p ON up.project_id = p.project_id
         INNER JOIN MEDRAX_users mu ON u.user_id = mu.user_id
-        WHERE LOWER(p.project_name) = 'medrax'
+        WHERE LOWER(p.project_name) = 'medrax' AND up.flag = 0
         """
         result = db.fetch_all(query)
         log_audit(current_user["user_id"], "/data/get_users_medrax", 200, "Fetched MEDRAX users")
@@ -107,8 +107,6 @@ async def get_users_medrax(current_user: dict = Depends(verify_token)):
     except Exception as e:
         log_audit(current_user["user_id"], "/data/get_users_medrax", 500, f"Error: {str(e)}")
         raise HTTPException(status_code=500, detail="Error fetching MEDRAX users")
-
-
 
 @data_router.get("/data/get_groups")
 async def get_groups(current_user: dict = Depends(verify_token)):
@@ -414,9 +412,6 @@ async def generate_password_for_user(
         raise HTTPException(status_code=500, detail="Failed to generate password")
 
 
-
-
-
 @data_router.get("/data/get_all_user_projects")
 async def get_all_user_projects(current_user: dict = Depends(verify_token)):
     if not is_admin_user(current_user):
@@ -424,12 +419,13 @@ async def get_all_user_projects(current_user: dict = Depends(verify_token)):
         raise HTTPException(status_code=403, detail="Insufficient permissions")
 
     try:
-        # Fetch all users with their project names
+        # Fetch all users with their project names (only active access, excluding admin)
         query = """
         SELECT u.username, p.project_name
         FROM users u
         JOIN user_projects up ON u.user_id = up.user_id
         JOIN project p ON up.project_id = p.project_id
+        WHERE up.flag = 0 AND LOWER(u.username) != 'admin'
         """
 
         records = db.fetch_all(query)
@@ -453,19 +449,19 @@ async def get_all_user_projects(current_user: dict = Depends(verify_token)):
 async def get_my_projects(current_user: dict = Depends(verify_token)):
     """
     Get projects for the currently authenticated user
-    Returns only the projects that the current user belongs to
+    Returns only the projects that the current user has active access to (flag = 0)
     """
     try:
         user_id = current_user["user_id"]
         username = current_user["username"]
         
-        # Fetch projects for the current user only
+        # Fetch projects for the current user only WHERE flag = 0 (active access)
         query = """
         SELECT p.project_name
         FROM users u
         JOIN user_projects up ON u.user_id = up.user_id
         JOIN project p ON up.project_id = p.project_id
-        WHERE u.user_id = %s
+        WHERE u.user_id = %s AND up.flag = 0
         """
         records = db.fetch_all(query, (user_id,))
         
@@ -477,14 +473,12 @@ async def get_my_projects(current_user: dict = Depends(verify_token)):
             "projects": projects
         }
         
-        log_audit(user_id, "/data/get_my_projects", 200, f"Fetched projects for user {username}")
+        log_audit(user_id, "/data/get_my_projects", 200, f"Fetched active projects for user {username}")
         return result
 
     except Exception as e:
         log_audit(current_user["user_id"], "/data/get_my_projects", 500, f"Error: {str(e)}")
         raise HTTPException(status_code=500, detail="Failed to fetch user projects")
-
-
 
 @data_router.post("/data/toggle_user_access")
 async def toggle_user_access(
@@ -496,6 +490,11 @@ async def toggle_user_access(
         raise HTTPException(status_code=403, detail="Unauthorized")
 
     try:
+        # Verify user exists
+        user_exists = db.fetch_one("SELECT 1 FROM users WHERE user_id = %s", (request.user_id,))
+        if not user_exists:
+            raise HTTPException(status_code=404, detail="User not found")
+
         # Get project_id from project_name
         project_record = db.fetch_one(
             "SELECT project_id FROM project WHERE LOWER(project_name) = LOWER(%s)",
@@ -507,11 +506,11 @@ async def toggle_user_access(
 
         # Check if mapping exists
         existing = db.fetch_one(
-            "SELECT 1 FROM user_projects WHERE user_id = %s AND project_id = %s",
+            "SELECT flag FROM user_projects WHERE user_id = %s AND project_id = %s",
             (request.user_id, project_id)
         )
         if not existing:
-            raise HTTPException(status_code=404, detail="User-project mapping not found")
+            raise HTTPException(status_code=404, detail="User is not assigned to this project")
 
         # Toggle flag: 0 = access granted, 1 = revoked
         flag_value = 0 if request.access else 1
@@ -520,10 +519,19 @@ async def toggle_user_access(
             (flag_value, request.user_id, project_id)
         )
 
-        msg = "Access granted" if request.access else "Access revoked"
-        log_audit(current_user["user_id"], "/data/toggle_user_access", 200, f"{msg} for user {request.user_id} in project {request.project_name}")
-        return {"message": msg}
+        action = "granted" if request.access else "revoked"
+        msg = f"Access {action} for user {request.user_id} in project {request.project_name}"
+        log_audit(current_user["user_id"], "/data/toggle_user_access", 200, msg)
+        
+        return {
+            "message": f"Access {action} successfully",
+            "user_id": request.user_id,
+            "project_name": request.project_name,
+            "access": request.access
+        }
 
+    except HTTPException:
+        raise
     except Exception as e:
         log_audit(current_user["user_id"], "/data/toggle_user_access", 500, f"Error: {str(e)}")
-        raise HTTPException(status_code=500, detail="Failed to toggle access")
+        raise HTTPException(status_code=500, detail="Failed to toggle user access")
