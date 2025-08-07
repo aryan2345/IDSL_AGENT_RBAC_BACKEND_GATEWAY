@@ -419,31 +419,35 @@ async def get_all_user_projects(current_user: dict = Depends(verify_token)):
         raise HTTPException(status_code=403, detail="Insufficient permissions")
 
     try:
-        # Fetch all users with their project names (only active access, excluding admin)
         query = """
-        SELECT u.username, p.project_name
+        SELECT u.user_id, u.username, p.project_name
         FROM users u
-        JOIN user_projects up ON u.user_id = up.user_id
-        JOIN project p ON up.project_id = p.project_id
-        WHERE up.flag = 0 AND LOWER(u.username) != 'admin'
+        LEFT JOIN user_projects up ON u.user_id = up.user_id AND up.flag = 0
+        LEFT JOIN project p ON up.project_id = p.project_id
+        WHERE LOWER(u.username) != 'admin'
+        ORDER BY u.username
         """
+        rows = db.fetch_all(query)
 
-        records = db.fetch_all(query)
+        # Group by user, keep id
+        tmp = {}
+        for r in rows:
+            uid = r["user_id"]
+            uname = r["username"]
+            proj = r["project_name"]
+            if uname not in tmp:
+                tmp[uname] = {"user_id": uid, "username": uname, "projects": []}
+            if proj:
+                tmp[uname]["projects"].append(proj)
 
-        # Group projects by username
-        user_projects = {}
-        for row in records:
-            username = row["username"]
-            project = row["project_name"]
-            user_projects.setdefault(username, []).append(project)
-
-        result = [{"username": k, "projects": v} for k, v in user_projects.items()]
+        result = list(tmp.values())
         log_audit(current_user["user_id"], "/data/get_all_user_projects", 200, "Fetched all user projects")
         return result
 
     except Exception as e:
         log_audit(current_user["user_id"], "/data/get_all_user_projects", 500, f"Error: {str(e)}")
         raise HTTPException(status_code=500, detail="Failed to fetch user projects")
+
 
 @data_router.get("/data/get_my_projects")
 async def get_my_projects(current_user: dict = Depends(verify_token)):
