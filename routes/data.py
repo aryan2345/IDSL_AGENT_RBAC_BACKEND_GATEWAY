@@ -614,17 +614,27 @@ async def toggle_user_access(
             "SELECT flag FROM user_projects WHERE user_id = %s AND project_id = %s",
             (request.user_id, project_id)
         )
+        
         if not existing:
-            raise HTTPException(status_code=404, detail="User is not assigned to this project")
+            # If no mapping exists and we're trying to grant access, create the mapping
+            if request.access:
+                db.execute_query(
+                    "INSERT INTO user_projects (user_id, project_id, flag) VALUES (%s, %s, 0)",
+                    (request.user_id, project_id)
+                )
+                action = "granted"
+            else:
+                # If no mapping exists and we're trying to revoke access, there's nothing to revoke
+                raise HTTPException(status_code=404, detail="User is not assigned to this project")
+        else:
+            # Toggle flag: 0 = access granted, 1 = revoked
+            flag_value = 0 if request.access else 1
+            db.execute_query(
+                "UPDATE user_projects SET flag = %s WHERE user_id = %s AND project_id = %s",
+                (flag_value, request.user_id, project_id)
+            )
+            action = "granted" if request.access else "revoked"
 
-        # Toggle flag: 0 = access granted, 1 = revoked
-        flag_value = 0 if request.access else 1
-        db.execute_query(
-            "UPDATE user_projects SET flag = %s WHERE user_id = %s AND project_id = %s",
-            (flag_value, request.user_id, project_id)
-        )
-
-        action = "granted" if request.access else "revoked"
         msg = f"Access {action} for user {request.user_id} in project {request.project_name}"
         log_audit(current_user["user_id"], "/data/toggle_user_access", 200, msg)
         
