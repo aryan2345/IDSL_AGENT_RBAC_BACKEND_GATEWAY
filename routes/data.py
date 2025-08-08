@@ -213,33 +213,84 @@ async def add_user_medrax(request: AddMedraxUserRequest, current_user: dict = De
         raise HTTPException(status_code=403, detail="Insufficient permissions")
 
     try:
-        project_record = db.fetch_one(
-            "SELECT project_id FROM project WHERE LOWER(project_name) = LOWER(%s)",
-            ("medrax",)
+        # Check if user already exists in any project
+        existing_user = db.fetch_one(
+            "SELECT user_id FROM users WHERE username = %s",
+            (request.username,)
         )
-        if not project_record:
-            raise HTTPException(status_code=500, detail="Medrax project not found in the database")
+        
+        if existing_user:
+            user_id = existing_user["user_id"]
+            
+            # Check if user already exists in Medrax project
+            medrax_user_exists = db.fetch_one(
+                "SELECT 1 FROM MEDRAX_users WHERE user_id = %s",
+                (user_id,)
+            )
+            
+            if medrax_user_exists:
+                raise HTTPException(status_code=400, detail=f"User '{request.username}' already exists in Medrax project")
+            
+            # Get Medrax project_id
+            project_record = db.fetch_one(
+                "SELECT project_id FROM project WHERE LOWER(project_name) = LOWER(%s)",
+                ("medrax",)
+            )
+            if not project_record:
+                raise HTTPException(status_code=500, detail="Medrax project not found in the database")
+            project_id = project_record["project_id"]
+            
+            # Add user to Medrax project (user_projects table)
+            db.execute_query(
+                "INSERT INTO user_projects (user_id, project_id, flag) VALUES (%s, %s, 0)",
+                (user_id, project_id)
+            )
+            
+            # Add user to MEDRAX_users table
+            db.execute_query(
+                "INSERT INTO MEDRAX_users (user_id) VALUES (%s)",
+                (user_id,)
+            )
+            
+            log_audit(current_user["user_id"], "/data/add_user_medrax", 201, f"Existing user '{request.username}' added to MEDRAX project")
+            return {
+                "message": "User added to MEDRAX project successfully",
+                "user_id": user_id,
+                "existing_user": True
+            }
+        
+        else:
+            # Create new user entirely
+            project_record = db.fetch_one(
+                "SELECT project_id FROM project WHERE LOWER(project_name) = LOWER(%s)",
+                ("medrax",)
+            )
+            if not project_record:
+                raise HTTPException(status_code=500, detail="Medrax project not found in the database")
 
-        project_id = project_record["project_id"]
+            project_id = project_record["project_id"]
 
-        # ✅ Generate a secure password
-        alphabet = string.ascii_letters + string.digits
-        generated_password = ''.join(secrets.choice(alphabet) for _ in range(12))
+            # Generate a secure password
+            alphabet = string.ascii_letters + string.digits
+            generated_password = ''.join(secrets.choice(alphabet) for _ in range(12))
 
-        user_id = create_user_base(request.username, generated_password, project_id)
+            user_id = create_user_base(request.username, generated_password, project_id)
 
-        db.execute_query(
-            "INSERT INTO MEDRAX_users (user_id) VALUES (%s)",
-            (user_id,)
-        )
+            db.execute_query(
+                "INSERT INTO MEDRAX_users (user_id) VALUES (%s)",
+                (user_id,)
+            )
 
-        log_audit(current_user["user_id"], "/data/add_user_medrax", 201, f"MEDRAX user '{request.username}' added")
-        return {
-            "message": "MEDRAX user added successfully",
-            "user_id": user_id,
-            "generated_password": generated_password  # ✅ return it so admin can share
-        }
+            log_audit(current_user["user_id"], "/data/add_user_medrax", 201, f"New MEDRAX user '{request.username}' created")
+            return {
+                "message": "MEDRAX user created successfully",
+                "user_id": user_id,
+                "generated_password": generated_password,
+                "existing_user": False
+            }
 
+    except HTTPException:
+        raise
     except Exception as e:
         log_audit(current_user["user_id"], "/data/add_user_medrax", 500, f"Error: {str(e)}")
         raise HTTPException(status_code=500, detail="Database error: " + str(e))
@@ -539,3 +590,45 @@ async def toggle_user_access(
     except Exception as e:
         log_audit(current_user["user_id"], "/data/toggle_user_access", 500, f"Error: {str(e)}")
         raise HTTPException(status_code=500, detail="Failed to toggle user access")
+    
+@data_router.get("/data/get_user_by_username/{username}")
+async def get_user_by_username(username: str, current_user: dict = Depends(verify_token)):
+    if not is_admin_user(current_user):
+        log_audit(current_user["user_id"], "/data/get_user_by_username", 403, "Forbidden access")
+        raise HTTPException(status_code=403, detail="Insufficient permissions")
+
+    try:
+        # Get basic user info
+        user = db.fetch_one("SELECT user_id FROM users WHERE username = %s", (username,))
+        if not user:
+            raise HTTPException(status_code=404, detail="User not found")
+        
+        user_id = user["user_id"]
+        
+        # Check if user exists in IDSL project
+        idsl_exists = db.fetch_one(
+            "SELECT 1 FROM IDSL_users WHERE user_id = %s", 
+            (user_id,)
+        )
+        
+        # Check if user exists in MEDRAX project
+        medrax_exists = db.fetch_one(
+            "SELECT 1 FROM MEDRAX_users WHERE user_id = %s", 
+            (user_id,)
+        )
+        
+        result = {
+            "user_id": user_id,
+            "username": username,
+            "has_idsl_access": bool(idsl_exists),
+            "has_medrax_access": bool(medrax_exists)
+        }
+        
+        log_audit(current_user["user_id"], "/data/get_user_by_username", 200, f"Fetched user info for {username}")
+        return result
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        log_audit(current_user["user_id"], "/data/get_user_by_username", 500, f"Error: {str(e)}")
+        raise HTTPException(status_code=500, detail="Error fetching user information")
