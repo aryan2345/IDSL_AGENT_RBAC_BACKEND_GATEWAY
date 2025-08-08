@@ -165,11 +165,13 @@ async def add_user_idsl(request: AddIDSLUserRequest, current_user: dict = Depend
         raise HTTPException(status_code=403, detail="Insufficient permissions")
 
     try:
+        # Check if group exists
         group_record = db.fetch_one("SELECT group_id FROM groups WHERE group_name = %s", (request.group_name,))
         if not group_record:
             raise HTTPException(status_code=400, detail="Invalid group name")
         group_id = group_record["group_id"]
 
+        # Get IDSL project_id
         project_record = db.fetch_one(
             "SELECT project_id FROM project WHERE LOWER(project_name) = LOWER(%s)",
             ("idsl",)
@@ -178,29 +180,77 @@ async def add_user_idsl(request: AddIDSLUserRequest, current_user: dict = Depend
             raise HTTPException(status_code=500, detail="IDSL project not found in the database")
         project_id = project_record["project_id"]
 
-        # ✅ Generate a secure password
-        alphabet = string.ascii_letters + string.digits
-        generated_password = ''.join(secrets.choice(alphabet) for _ in range(12))
-
-        user_id = create_user_base(request.username, generated_password, project_id)
-
-        db.execute_query(
-            "INSERT INTO user_groups (user_id, group_id, is_admin) VALUES (%s, %s, %s)",
-            (user_id, group_id, request.is_admin)
+        # Check if user already exists
+        existing_user = db.fetch_one(
+            "SELECT user_id FROM users WHERE username = %s",
+            (request.username,)
         )
+        
+        if existing_user:
+            user_id = existing_user["user_id"]
+            
+            # Check if user already exists in IDSL project
+            idsl_user_exists = db.fetch_one(
+                "SELECT 1 FROM IDSL_users WHERE user_id = %s",
+                (user_id,)
+            )
+            
+            if idsl_user_exists:
+                raise HTTPException(status_code=400, detail=f"User '{request.username}' already exists in IDSL project")
+            
+            # Add user to IDSL project (user_projects table)
+            db.execute_query(
+                "INSERT INTO user_projects (user_id, project_id, flag) VALUES (%s, %s, 0)",
+                (user_id, project_id)
+            )
+            
+            # Add to user_groups
+            db.execute_query(
+                "INSERT INTO user_groups (user_id, group_id, is_admin) VALUES (%s, %s, %s)",
+                (user_id, group_id, request.is_admin)
+            )
 
-        db.execute_query(
-            "INSERT INTO IDSL_users (user_id, group_id, role) VALUES (%s, %s, %s)",
-            (user_id, group_id, 'group_admin' if request.is_admin else 'user')
-        )
+            # Add to IDSL_users
+            db.execute_query(
+                "INSERT INTO IDSL_users (user_id, group_id, role) VALUES (%s, %s, %s)",
+                (user_id, group_id, 'group_admin' if request.is_admin else 'user')
+            )
 
-        log_audit(current_user["user_id"], "/data/add_user_idsl", 201, f"IDSL user '{request.username}' added")
-        return {
-            "message": "IDSL user added successfully",
-            "user_id": user_id,
-            "generated_password": generated_password  # ✅ so admin can share
-        }
+            log_audit(current_user["user_id"], "/data/add_user_idsl", 201, f"Existing user '{request.username}' added to IDSL project")
+            return {
+                "message": "User added to IDSL project successfully",
+                "user_id": user_id,
+                "existing_user": True
+            }
+        
+        else:
+            # Create new user entirely
+            # Generate a secure password
+            alphabet = string.ascii_letters + string.digits
+            generated_password = ''.join(secrets.choice(alphabet) for _ in range(12))
 
+            user_id = create_user_base(request.username, generated_password, project_id)
+
+            db.execute_query(
+                "INSERT INTO user_groups (user_id, group_id, is_admin) VALUES (%s, %s, %s)",
+                (user_id, group_id, request.is_admin)
+            )
+
+            db.execute_query(
+                "INSERT INTO IDSL_users (user_id, group_id, role) VALUES (%s, %s, %s)",
+                (user_id, group_id, 'group_admin' if request.is_admin else 'user')
+            )
+
+            log_audit(current_user["user_id"], "/data/add_user_idsl", 201, f"New IDSL user '{request.username}' created")
+            return {
+                "message": "IDSL user created successfully",
+                "user_id": user_id,
+                "generated_password": generated_password,
+                "existing_user": False
+            }
+
+    except HTTPException:
+        raise
     except Exception as e:
         log_audit(current_user["user_id"], "/data/add_user_idsl", 500, f"Error: {str(e)}")
         raise HTTPException(status_code=500, detail="Database error: " + str(e))
