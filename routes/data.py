@@ -9,6 +9,9 @@ from schema.models import (
 import secrets
 import string
 from schema.models import GeneratePasswordRequest
+from schema.models import RestrictUserRequest
+
+
 from fastapi import Query
 data_router = APIRouter()
 
@@ -75,15 +78,17 @@ async def get_users_idsl(current_user: dict = Depends(verify_token)):
         INNER JOIN IDSL_users iu ON u.user_id = iu.user_id
         LEFT JOIN user_groups ug ON u.user_id = ug.user_id
         LEFT JOIN groups g ON ug.group_id = g.group_id
-        WHERE LOWER(p.project_name) = 'idsl' AND up.flag = 0
+        WHERE LOWER(p.project_name) = 'idsl'
+          AND up.flag = 0
+          AND u.restrict_access = 0
         """
-
         result = db.fetch_all(query)
         log_audit(current_user["user_id"], "/data/get_users_idsl", 200, "Fetched IDSL users")
         return result
     except Exception as e:
         log_audit(current_user["user_id"], "/data/get_users_idsl", 500, f"Error: {str(e)}")
         raise HTTPException(status_code=500, detail="Error fetching IDSL users")
+
 
 @data_router.get("/data/get_users_medrax")
 async def get_users_medrax(current_user: dict = Depends(verify_token)):
@@ -99,7 +104,9 @@ async def get_users_medrax(current_user: dict = Depends(verify_token)):
         INNER JOIN user_projects up ON u.user_id = up.user_id
         INNER JOIN project p ON up.project_id = p.project_id
         INNER JOIN MEDRAX_users mu ON u.user_id = mu.user_id
-        WHERE LOWER(p.project_name) = 'medrax' AND up.flag = 0
+        WHERE LOWER(p.project_name) = 'medrax'
+          AND up.flag = 0
+          AND u.restrict_access = 0
         """
         result = db.fetch_all(query)
         log_audit(current_user["user_id"], "/data/get_users_medrax", 200, "Fetched MEDRAX users")
@@ -107,6 +114,7 @@ async def get_users_medrax(current_user: dict = Depends(verify_token)):
     except Exception as e:
         log_audit(current_user["user_id"], "/data/get_users_medrax", 500, f"Error: {str(e)}")
         raise HTTPException(status_code=500, detail="Error fetching MEDRAX users")
+
 
 @data_router.get("/data/get_groups")
 async def get_groups(current_user: dict = Depends(verify_token)):
@@ -526,11 +534,11 @@ async def get_all_user_projects(current_user: dict = Depends(verify_token)):
         LEFT JOIN user_projects up ON u.user_id = up.user_id AND up.flag = 0
         LEFT JOIN project p ON up.project_id = p.project_id
         WHERE LOWER(u.username) != 'admin'
+          AND u.restrict_access = 0
         ORDER BY u.username
         """
         rows = db.fetch_all(query)
 
-        # Group by user, keep id
         tmp = {}
         for r in rows:
             uid = r["user_id"]
@@ -548,6 +556,7 @@ async def get_all_user_projects(current_user: dict = Depends(verify_token)):
     except Exception as e:
         log_audit(current_user["user_id"], "/data/get_all_user_projects", 500, f"Error: {str(e)}")
         raise HTTPException(status_code=500, detail="Failed to fetch user projects")
+
 
 
 @data_router.get("/data/get_my_projects")
@@ -692,3 +701,48 @@ async def get_user_by_username(username: str, current_user: dict = Depends(verif
     except Exception as e:
         log_audit(current_user["user_id"], "/data/get_user_by_username", 500, f"Error: {str(e)}")
         raise HTTPException(status_code=500, detail="Error fetching user information")
+
+@data_router.post("/data/restrict_user")
+async def restrict_user(
+    request: RestrictUserRequest,
+    current_user: dict = Depends(verify_token)
+):
+    if current_user.get("username") != "admin":
+        log_audit(current_user["user_id"], "/data/restrict_user", 403, "Forbidden")
+        raise HTTPException(status_code=403, detail="Insufficient permissions")
+
+    # Verify user exists
+    user = db.fetch_one(
+        "SELECT user_id, username FROM users WHERE user_id = %s",
+        (request.user_id,)
+    )
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    # Update restrict_access flag
+    new_val = 1 if request.restrict else 0
+    db.execute_query(
+        "UPDATE users SET restrict_access = %s WHERE user_id = %s",
+        (new_val, request.user_id)
+    )
+
+    # If restricting: kill sessions and (optionally) revoke all project mappings
+    if request.restrict:
+        db.execute_query(
+            "DELETE FROM user_sessions WHERE user_id = %s",
+            (request.user_id,)
+        )
+        # ensure they do not appear in project lists
+        db.execute_query(
+            "UPDATE user_projects SET flag = 1 WHERE user_id = %s",
+            (request.user_id,)
+        )
+
+    action = "restricted" if request.restrict else "unrestricted"
+    log_audit(current_user["user_id"], "/data/restrict_user", 200, f"{action} {user['username']}")
+    return {
+        "message": f"User {action} successfully",
+        "user_id": request.user_id,
+        "username": user["username"],
+        "restrict": request.restrict
+    }

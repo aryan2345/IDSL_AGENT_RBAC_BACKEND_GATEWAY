@@ -16,12 +16,13 @@ db = PostgresSQL()
 @login_router.post("/login")
 async def login(user: UserLogin):
     try:
-        # Step 1: Fetch user and their first associated project
+        # Step 1: Fetch user (+ restrict_access)
         user_data = db.fetch_one(
             """
             SELECT 
-                u.user_id, u.username, u.password_hash, 
-                u.requires_password_reset, p.project_name
+                u.user_id, u.username, u.password_hash,
+                u.requires_password_reset, u.restrict_access,   -- ← added
+                p.project_name
             FROM users u
             JOIN user_projects up ON u.user_id = up.user_id
             JOIN project p ON up.project_id = p.project_id
@@ -38,13 +39,18 @@ async def login(user: UserLogin):
             if not user_id_for_log:
                 found = db.fetch_one("SELECT user_id FROM users WHERE username = %s", (user.username,))
                 user_id_for_log = found["user_id"] if found else None
-
             if user_id_for_log:
                 log_audit(user_id_for_log, "/login", 401, "Invalid credentials")
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid credentials")
 
         user_id = user_data["user_id"]
         project_name = user_data["project_name"].strip().lower()
+        restrict_access = int(user_data.get("restrict_access", 0))  # 0/1
+
+        # (Optional but recommended) Block restricted non-admin accounts at login
+        if user.username.strip().lower() != "admin" and restrict_access == 1:
+            log_audit(user_id, "/login", 403, "Restricted user blocked at login")
+            raise HTTPException(status_code=403, detail="You are restricted")
 
         # Step 3: Determine role if needed
         role = None
@@ -73,37 +79,32 @@ async def login(user: UserLogin):
             (session_id, user_id, access_token, expiry)
         )
 
-        # Step 6: First-time login password reset
-        if user_data["requires_password_reset"] == 0:
-            log_audit(user_id, "/login", 200, "First-time login - password reset required")
-            response = {
-                "message": "Go to /data/change_password to reset your password",
-                "access_token": access_token,
-                "token_type": "bearer",
-                "user_id": user_id,
-                "username": user.username,
-                "requires_password_reset": user_data["requires_password_reset"],
-                "project_name": project_name
-            }
-            if role:
-                response["role"] = role
-            return response
-
-        # Step 7: Normal login response
-        log_audit(user_id, "/login", 200, "Login successful")
-        response = {
+        # Step 6/7: Build response (include restrict_access + convenient boolean)
+        base_resp = {
             "access_token": access_token,
             "token_type": "bearer",
             "user_id": user_id,
             "username": user.username,
             "requires_password_reset": user_data["requires_password_reset"],
-            "project_name": project_name
+            "project_name": project_name,
+            "restrict_access": restrict_access,        # ← added
+            "restricted": bool(restrict_access),       # ← added
         }
         if role:
-            response["role"] = role
-        return response
+            base_resp["role"] = role
+
+        if user_data["requires_password_reset"] == 0:
+            log_audit(user_id, "/login", 200, "First-time login - password reset required")
+            return {
+                "message": "Go to /data/change_password to reset your password",
+                **base_resp
+            }
+
+        log_audit(user_id, "/login", 200, "Login successful")
+        return base_resp
 
     except HTTPException:
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail="Login failed: " + str(e))
+

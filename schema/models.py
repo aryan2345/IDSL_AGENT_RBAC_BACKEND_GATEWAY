@@ -57,3 +57,7 @@ class UpdateGroupRequest(BaseModel):
 class GeneratePasswordRequest(BaseModel):
     username: str
     length: int = 12
+
+class RestrictUserRequest(BaseModel):
+    user_id: str            # required
+    restrict: bool          # True => restrict, False => unrestrict

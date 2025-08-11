@@ -15,7 +15,8 @@ CREATE TABLE IF NOT EXISTS users (
     user_id VARCHAR PRIMARY KEY,
     username VARCHAR UNIQUE NOT NULL,
     password_hash VARCHAR NOT NULL,
-    requires_password_reset INTEGER DEFAULT 0
+    requires_password_reset INTEGER DEFAULT 0,
+    restrict_access INTEGER DEFAULT 0
 );
 
 -- 4. Create `user_groups` table
