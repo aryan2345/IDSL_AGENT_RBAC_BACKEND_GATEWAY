@@ -59,6 +59,7 @@ async def change_password(
         raise HTTPException(status_code=500, detail="Failed to change password")
 
 
+
 @data_router.get("/data/get_users_idsl")
 async def get_users_idsl(current_user: dict = Depends(verify_token)):
     if not is_admin_user(current_user):
